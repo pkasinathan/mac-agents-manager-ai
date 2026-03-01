@@ -46,7 +46,8 @@ def csrf_token():
 @app.route('/')
 def index():
     """IDE-style dashboard."""
-    return render_template('index.html', port=8081, csrf_token=_csrf_token)
+    port = int(os.environ.get('MAM_PORT', '8081'))
+    return render_template('index.html', port=port, csrf_token=_csrf_token)
 
 
 @app.route('/api/default-env')

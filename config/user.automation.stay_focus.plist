@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Service identifier -->
+    <key>Label</key>
+    <string>user.automation.stay_focus</string>
+    
+    <!-- Program to run -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>{{PROJECT_ROOT}}/scripts/stay_focus.sh</string>
+    </array>
+    
+    <!-- Working directory -->
+    <key>WorkingDirectory</key>
+    <string>{{PROJECT_ROOT}}</string>
+    
+    <!-- Standard output log -->
+    <key>StandardOutPath</key>
+    <string>/tmp/stay_focus.out</string>
+    
+    <!-- Standard error log -->
+    <key>StandardErrorPath</key>
+    <string>/tmp/stay_focus.log</string>
+    
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>
+        <key>HOME</key>
+        <string>{{HOME}}</string>
+    </dict>
+    
+    <!-- Schedule - Run at specific times -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <!-- 10:10 AM - Close all distracting apps -->
+        <dict>
+            <key>Hour</key>
+            <integer>10</integer>
+            <key>Minute</key>
+            <integer>10</integer>
+        </dict>
+        
+        <!-- 1:00 PM - Open Slack for lunch break -->
+        <dict>
+            <key>Hour</key>
+            <integer>13</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        
+        <!-- 1:10 PM - Close Slack (back to work) -->
+        <dict>
+            <key>Hour</key>
+            <integer>13</integer>
+            <key>Minute</key>
+            <integer>10</integer>
+        </dict>
+        
+        <!-- 4:00 PM - Open Slack for afternoon break -->
+        <dict>
+            <key>Hour</key>
+            <integer>16</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        
+        <!-- 4:10 PM - Close Slack (back to work) -->
+        <dict>
+            <key>Hour</key>
+            <integer>16</integer>
+            <key>Minute</key>
+            <integer>10</integer>
+        </dict>
+        
+        <!-- 5:00 PM - Open all apps (end of day) -->
+        <dict>
+            <key>Hour</key>
+            <integer>17</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+    </array>
+    
+    <!-- Description -->
+    <key>Description</key>
+    <string>Stay Focus - Manages Mac applications to maintain focus during work hours</string>
+    
+</dict>
+</plist>
+
