@@ -5,10 +5,14 @@ import hashlib
 from collections import deque
 from pathlib import Path
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, abort
-from models import LaunchService
-from launchctl import LaunchCtlController
+from mac_agents_manager.models import LaunchService
+from mac_agents_manager.launchctl import LaunchCtlController
 
-app = Flask(__name__)
+_pkg_dir = os.path.dirname(os.path.abspath(__file__))
+
+app = Flask(__name__,
+            template_folder=os.path.join(_pkg_dir, 'templates'),
+            static_folder=os.path.join(_pkg_dir, 'static'))
 app.secret_key = os.urandom(24)
 
 _csrf_token = hashlib.sha256(os.urandom(32)).hexdigest()
@@ -320,12 +324,6 @@ def read_log_file(log_path, tail=50):
 
 
 if __name__ == '__main__':
-    port = 8081  # Hardcoded port
-    print(f"\n{'='*60}")
-    print(f"Mac Agents Manager starting on http://localhost:{port}")
-    print(f"{'='*60}\n")
-    debug = os.environ.get('FLASK_DEBUG', '').lower() in ('1', 'true')
-    app.run(host='127.0.0.1', port=port, debug=debug)
-
-
+    from mac_agents_manager.cli import main
+    main()
 

@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mac-agents-manager-ai"
+version = "1.0.0"
+description = "A web UI for managing macOS LaunchAgents -- create, edit, start, stop, and reload agents from your browser"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Systems Administration",
+    "Framework :: Flask",
+]
+dependencies = [
+    "Flask>=3.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "ruff>=0.4.0",
+    "build>=1.0.0",
+    "twine>=5.0.0",
+]
+
+[project.scripts]
+mam = "mac_agents_manager.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/pkasinathan/mac-agents-manager"
+Repository = "https://github.com/pkasinathan/mac-agents-manager"
+Issues = "https://github.com/pkasinathan/mac-agents-manager/issues"
+Changelog = "https://github.com/pkasinathan/mac-agents-manager/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+mac_agents_manager = [
+    "templates/*.html",
+    "static/*.css",
+]

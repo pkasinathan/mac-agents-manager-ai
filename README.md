@@ -1,37 +1,60 @@
 # Mac Agents Manager
 
-A simple web UI for managing macOS LaunchAgents. Create, view, edit, start, stop, and reload user LaunchAgents from your browser.
+A web UI for managing macOS LaunchAgents. Create, view, edit, start, stop, and reload user LaunchAgents from your browser.
 
-## Quick Start
+## Install
 
-1) Install and start as a user LaunchAgent
+### Option A: pip (recommended)
+
+```bash
+pip install mac-agents-manager-ai
+mam
+```
+
+Then open http://localhost:8081.
+
+### Option B: Install as a LaunchAgent (auto-start on login)
 
 ```bash
 cd ~/workspace
-git clone https://github.com/pkasinathan/mac_agents_manager.git
-cd mac_agents_manager
+git clone https://github.com/pkasinathan/mac-agents-manager.git
+cd mac-agents-manager
 bash install.sh
 ```
 
 This will:
 - Create a Python virtual environment in `venv/`
-- Install dependencies from `requirements.txt`
-- Generate and load a user-specific plist at `~/Library/LaunchAgents/user.productivity.mac_agents_manager.plist` (with correct paths and env vars)
+- Install the package in editable mode
+- Generate and load a user-specific plist at `~/Library/LaunchAgents/user.productivity.mac_agents_manager.plist`
 - Start the web app at http://localhost:8081
 
-2) Open the UI
+### Option C: Run from source
 
-- Visit http://localhost:8081
+```bash
+git clone https://github.com/pkasinathan/mac-agents-manager.git
+cd mac-agents-manager
+python3 -m venv venv
+source venv/bin/activate
+pip install -e .
+mam
+```
 
 ## Project Structure
 
-- `app.py`: Flask app entrypoint and routes
-- `models.py`: LaunchAgent parsing, serialization, and UI data
-- `launchctl.py`: Thin wrapper around `launchctl` commands
-- `templates/` and `static/`: Web UI
-- `start_mac_agents_manager.sh`: Starts the app (used by the LaunchAgent)
-- `install.sh`: Creates venv, installs deps, installs/loads LaunchAgent
-- `requirements.txt`: Python dependencies
+```
+src/mac_agents_manager/
+    __init__.py         Package version
+    app.py              Flask app and routes
+    cli.py              CLI entry point (mam command)
+    models.py           LaunchAgent parsing, serialization, and UI data
+    launchctl.py        Thin wrapper around launchctl commands
+    templates/          HTML templates
+    static/             CSS styles
+```
+
+- `install.sh` -- Creates venv, installs package, installs/loads LaunchAgent
+- `start_mac_agents_manager.sh` -- Start script used by the LaunchAgent
+- `pyproject.toml` -- Package metadata for PyPI
 
 ## Common Commands
 
@@ -41,22 +64,11 @@ launchctl unload ~/Library/LaunchAgents/user.productivity.mac_agents_manager.pli
 launchctl load   ~/Library/LaunchAgents/user.productivity.mac_agents_manager.plist
 ```
 
-Logs:
+Or use the Makefile:
 ```bash
-# App stdout / stderr
-tail -f /tmp/mac_agents_manager.out
-tail -f /tmp/mac_agents_manager.err
-```
-
-Run locally without LaunchAgent:
-```bash
-cd ~/workspace
-git clone https://github.com/pkasinathan/mac_agents_manager.git
-cd mac_agents_manager
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python app.py
+make stop
+make start
+make logs
 ```
 
 ## Environment Variables
@@ -64,14 +76,27 @@ python app.py
 | Variable | Description |
 |---|---|
 | `FLASK_DEBUG` | Set to `1` or `true` to enable Flask debug mode (default: off) |
+| `MAM_PORT` | Port to listen on (default: `8081`) |
 | `MAM_LABEL_PREFIXES` | Comma-separated extra label prefixes to include (e.g. `com.myorg.,com.acme.`) |
 
 ## Security
 
 This tool binds to `127.0.0.1` only and is designed for single-user, localhost use. See [SECURITY.md](SECURITY.md) for the full security model and vulnerability reporting instructions.
 
+## Development
+
+```bash
+git clone https://github.com/pkasinathan/mac-agents-manager.git
+cd mac-agents-manager
+python3 -m venv venv
+source venv/bin/activate
+pip install -e ".[dev]"
+make lint
+make test
+```
+
 ## Notes
-- Default port is 8081. To change it, update the hardcoded port in `app.py` and any references in `install.sh`.
+- Default port is 8081. Override with `MAM_PORT` env var.
 - If you move the project folder, re-run `install.sh` (it rebuilds the venv and refreshes the LaunchAgent paths).
 
 ## License
