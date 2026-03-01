@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2026-03-01
+
+### Added
+
+- Full CLI subcommands mirroring every web UI feature:
+  `mam list`, `mam show`, `mam create`, `mam load`, `mam unload`,
+  `mam start`, `mam stop`, `mam restart`, `mam delete`, `mam start-all`,
+  `mam logs` (with `--follow` and `--stderr`), `mam open`, `mam serve`
+- `mam` with no arguments still starts the web server (backward compatible)
+
 ## [1.0.1] - 2026-03-01
 
 ### Added
