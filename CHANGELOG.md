@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.1] - 2026-03-01
+
+### Fixed
+
+- Log file reads now work on macOS where `/tmp` resolves to `/private/tmp` after `Path.resolve()`. Added `/private/tmp/`, `/private/var/log/`, `/private/var/folders/` to allowed directories in app.py, models.py, and cli.py.
+
 ## [1.1.0] - 2026-03-01
 
 ### Added

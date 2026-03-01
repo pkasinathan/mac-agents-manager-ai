@@ -17,7 +17,8 @@ app.secret_key = os.urandom(24)
 
 _csrf_token = hashlib.sha256(os.urandom(32)).hexdigest()
 
-ALLOWED_LOG_DIRS = ('/tmp/', '/var/log/', '/var/folders/')
+ALLOWED_LOG_DIRS = ('/tmp/', '/private/tmp/', '/var/log/', '/private/var/log/',
+                    '/var/folders/', '/private/var/folders/')
 
 
 @app.after_request

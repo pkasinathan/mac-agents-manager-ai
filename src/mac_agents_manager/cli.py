@@ -8,7 +8,8 @@ from pathlib import Path
 
 from mac_agents_manager import __version__
 
-ALLOWED_LOG_DIRS = ('/tmp/', '/var/log/', '/var/folders/')
+ALLOWED_LOG_DIRS = ('/tmp/', '/private/tmp/', '/var/log/', '/private/var/log/',
+                    '/var/folders/', '/private/var/folders/')
 
 
 def _get_services():

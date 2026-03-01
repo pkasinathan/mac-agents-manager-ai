@@ -350,7 +350,8 @@ class LaunchService:
                 return int(match.group(1))
         return None
     
-    ALLOWED_LOG_DIRS = ('/tmp/', '/var/log/', '/var/folders/')
+    ALLOWED_LOG_DIRS = ('/tmp/', '/private/tmp/', '/var/log/', '/private/var/log/',
+                        '/var/folders/', '/private/var/folders/')
 
     def _detect_port_from_logs(self) -> Optional[int]:
         """Parse port number from stdout logs."""
