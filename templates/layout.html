@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Mac Agents Manager{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" integrity="sha384-L1dWfspMTHU/ApYnFiMz2QID/PlP1xCW9visvBdbEkOLkSSWsP6ZJWhPw6apiXxU" crossorigin="anonymous">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% if csrf_token %}<meta name="csrf-token" content="{{ csrf_token }}">{% endif %}
+    <script>
+        (function() {
+            var t = localStorage.getItem('mac-agents-theme');
+            if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+        })();
+    </script>
+</head>
+<body>
+    <header>
+        <div>
+            <h1>Mac Agents Manager</h1>
+            <span class="subtitle">Automate Tasks & Keep Apps Running{% if port %} &bull; Port {{ port }}{% endif %}</span>
+        </div>
+        <div class="header-right">
+            <button class="theme-toggle" onclick="toggleTheme()" title="Toggle dark/light theme" id="theme-toggle-btn">🌙</button>
+        </div>
+    </header>
+
+    {% block content %}{% endblock %}
+
+    <!-- Modal for sudo commands -->
+    <div id="sudoModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Sudo Access Required</h2>
+            </div>
+            <div class="modal-body">
+                <p id="modalMessage">This operation requires sudo access. Please run the following command in your Terminal:</p>
+                <div class="command-box" id="sudoCommand"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="copyCommand()">Copy Command</button>
+                <button class="btn btn-primary" onclick="closeModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let currentServiceId = null;
+        let currentServiceData = null;
+        let servicesTree = null;
+        let timeSlotCount = 1;
+
+        function getCSRFToken() {
+            const meta = document.querySelector('meta[name="csrf-token"]');
+            return meta ? meta.getAttribute('content') : '';
+        }
+
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#x27;');
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadServicesTree();
+        });
+
+        // Load services tree
+        async function loadServicesTree() {
+            try {
+                const response = await fetch('/api/services');
+                servicesTree = await response.json();
+                renderTree();
+            } catch (error) {
+                console.error('Error loading services:', error);
+                showFlashMessage('Error loading services', 'error');
+            }
+        }
+
+        // Render the tree view
+        function renderTree() {
+            const container = document.getElementById('agents-tree');
+            
+            if (!servicesTree || (!servicesTree.scheduled && !servicesTree.keepalive)) {
+                container.innerHTML = '<div style="padding: 10px; color: var(--text-muted);">No services</div>';
+                return;
+            }
+
+            let html = '';
+            
+            // Render Scheduled section
+            html += renderScheduleTypeSection('Scheduled', servicesTree.scheduled);
+            
+            // Render KeepAlive section
+            html += renderScheduleTypeSection('KeepAlive', servicesTree.keepalive);
+            
+            container.innerHTML = html;
+        }
+
+        function renderScheduleTypeSection(scheduleType, namespaces) {
+            if (!namespaces || Object.keys(namespaces).length === 0) {
+                return '';
+            }
+
+            let html = `
+                <div class="tree-namespace">
+                    <div class="namespace-title expanded" onclick="toggleNamespace(this)">
+                        ${escapeHtml(scheduleType)}
+                    </div>
+                    <div class="namespace-services show">
+            `;
+            
+            // Render namespaces within this schedule type
+            for (const [namespace, services] of Object.entries(namespaces)) {
+                html += `
+                    <div class="tree-namespace" style="padding-left: 15px;">
+                        <div class="namespace-title expanded" onclick="toggleNamespace(this)">
+                            ${escapeHtml(namespace)}
+                        </div>
+                        <div class="namespace-services show">
+                `;
+                
+                services.forEach(service => {
+                    const statusClass = service.status.running ? 'status-running' : 
+                                       service.status.loaded ? 'status-stopped' : 'status-notloaded';
+                    
+                    const safeId = escapeHtml(service.service_id);
+                    const safeName = escapeHtml(service.name);
+                    const portDisplay = service.port ? ` <span class="port-badge">:${escapeHtml(String(service.port))}</span>` : '';
+                    
+                    html += `
+                        <div class="service-item ${statusClass}" 
+                             data-service-id="${safeId}"
+                             onclick="loadService(this.dataset.serviceId)">
+                            ${safeName}${portDisplay}
+                        </div>
+                    `;
+                });
+                
+                html += `
+                        </div>
+                    </div>
+                `;
+            }
+            
+            html += `
+                    </div>
+                </div>
+            `;
+            
+            return html;
+        }
+
+        // Toggle tree section
+        function toggleSection(element) {
+            element.classList.toggle('expanded');
+            element.nextElementSibling.classList.toggle('show');
+        }
+
+        // Toggle namespace
+        function toggleNamespace(element) {
+            element.classList.toggle('expanded');
+            element.nextElementSibling.classList.toggle('show');
+        }
+
+        // Load service details
+        async function loadService(serviceId) {
+            try {
+                const response = await fetch(`/api/service/${serviceId}`);
+                currentServiceData = await response.json();
+                currentServiceId = serviceId;
+                
+                // Update selected state in tree
+                document.querySelectorAll('.service-item').forEach(el => {
+                    el.classList.remove('selected');
+                });
+                const el = document.querySelector(`[data-service-id="${CSS.escape(serviceId)}"]`);
+                if (el) el.classList.add('selected');
+                
+                // Render editor form
+                renderEditor();
+                populateForm();
+                updatePlistPreview();
+                updateLogs();
+            } catch (error) {
+                console.error('Error loading service:', error);
+                showFlashMessage('Error loading service', 'error');
+            }
+        }
+
+        // Render editor form
+        function renderEditor() {
+            const editorTop = document.getElementById('editor-top');
+            const template = document.getElementById('editor-template').textContent;
+            editorTop.innerHTML = template;
+            
+            // Show editor header
+            const editorHeader = document.getElementById('editor-header');
+            if (editorHeader) {
+                editorHeader.style.display = 'flex';
+            }
+            
+            // Update header title
+            const editorTitle = document.getElementById('editor-title');
+            if (editorTitle && currentServiceData) {
+                editorTitle.textContent = currentServiceData.name || 'New Agent';
+            }
+            
+            // Update button visibility based on schedule type
+            updateButtonVisibility();
+        }
+        
+        // Update button visibility based on service schedule type
+        function updateButtonVisibility() {
+            const runOnceBtn = document.getElementById('btn-runonce-header');
+            const portLinkBtn = document.getElementById('btn-port-link');
+            const unloadBtn = document.getElementById('btn-unload-header');
+            const loadBtn = document.getElementById('btn-load-header');
+            
+            if (!currentServiceData) return;
+            
+            // Show "Run Once" button only for scheduled agents
+            if (runOnceBtn) {
+                if (currentServiceData.schedule_type === 'scheduled') {
+                    runOnceBtn.style.display = 'inline-block';
+                } else {
+                    runOnceBtn.style.display = 'none';
+                }
+            }
+            
+            if (portLinkBtn) {
+                const port = Number(currentServiceData.port);
+                if (currentServiceData.schedule_type === 'keepalive' && port && Number.isInteger(port)) {
+                    portLinkBtn.href = `http://localhost:${port}`;
+                    portLinkBtn.textContent = `http://localhost:${port}`;
+                    portLinkBtn.style.display = 'inline-block';
+                } else {
+                    portLinkBtn.style.display = 'none';
+                }
+            }
+
+            // Hide unload/load buttons for the self agent to avoid orphaning
+            const isSelf = currentServiceData.label === 'user.productivity.mac_agents_manager';
+            if (unloadBtn) {
+                unloadBtn.style.display = isSelf ? 'none' : 'inline-block';
+            }
+            if (loadBtn) {
+                loadBtn.style.display = isSelf ? 'none' : 'inline-block';
+            }
+        }
+
+        // Populate form with agent data
+        function populateForm() {
+            if (!currentServiceData) return;
+            
+            document.getElementById('service_label').value = currentServiceData.label || '';
+            document.getElementById('service_name').value = currentServiceData.name || '';
+            document.getElementById('service_category').value = currentServiceData.namespace || currentServiceData.category || '';
+            document.getElementById('script_path').value = currentServiceData.program || '';
+            document.getElementById('working_directory').value = currentServiceData.working_directory || '';
+            
+            // Update header title
+            const editorTitle = document.getElementById('editor-title');
+            if (editorTitle) {
+                editorTitle.textContent = currentServiceData.name || 'New Agent';
+            }
+            
+            // Show/hide schedule section based on schedule type
+            const scheduleType = currentServiceData.schedule_type;
+            const scheduleSection = document.getElementById('schedule-section');
+            if (scheduleType === 'scheduled') {
+                scheduleSection.classList.remove('hidden');
+            } else {
+                scheduleSection.classList.add('hidden');
+            }
+            
+            // Schedule times
+            if (currentServiceData.schedule_times && currentServiceData.schedule_times.length > 0) {
+                const container = document.getElementById('schedule-times');
+                container.innerHTML = '';
+                timeSlotCount = currentServiceData.schedule_times.length;
+                
+                currentServiceData.schedule_times.forEach((time, index) => {
+                    const safeHour = Number.isInteger(Number(time.Hour)) ? Number(time.Hour) : 0;
+                    const safeMinute = Number.isInteger(Number(time.Minute)) ? Number(time.Minute) : 0;
+                    const removeBtn = index > 0 ? '<button type="button" class="btn-remove-time" onclick="removeTimeSlot(this)">Remove</button>' : '';
+                    container.innerHTML += `
+                        <div class="time-slot">
+                            <label>Hour:</label>
+                            <input type="number" name="schedule_hour_${index}" min="0" max="23" value="${safeHour}">
+                            <label>Minute:</label>
+                            <input type="number" name="schedule_minute_${index}" min="0" max="59" value="${safeMinute}">
+                            ${removeBtn}
+                        </div>
+                    `;
+                });
+            }
+            
+            // Environment variables
+            if (currentServiceData.environment) {
+                let envText = '';
+                for (const [key, value] of Object.entries(currentServiceData.environment)) {
+                    envText += `${key}=${value}\n`;
+                }
+                document.getElementById('environment').value = envText;
+            }
+            
+            // Listen for form changes to update plist preview
+            document.getElementById('service-form').addEventListener('input', updatePlistPreview);
+            document.getElementById('service-form').addEventListener('change', updatePlistPreview);
+            
+            // Update button visibility
+            updateButtonVisibility();
+        }
+        
+        // Add time slot
+        function addTimeSlot() {
+            const container = document.getElementById('schedule-times');
+            const div = document.createElement('div');
+            div.className = 'time-slot';
+            div.innerHTML = `
+                <label>Hour:</label>
+                <input type="number" name="schedule_hour_${timeSlotCount}" min="0" max="23" value="14">
+                <label>Minute:</label>
+                <input type="number" name="schedule_minute_${timeSlotCount}" min="0" max="59" value="0">
+                <button type="button" class="btn-remove-time" onclick="removeTimeSlot(this)">Remove</button>
+            `;
+            container.appendChild(div);
+            timeSlotCount++;
+            updatePlistPreview();
+        }
+        
+        // Remove time slot
+        function removeTimeSlot(button) {
+            button.parentElement.remove();
+            updatePlistPreview();
+        }
+        
+        // Update plist preview
+        function updatePlistPreview() {
+            // For now, just show the current plist XML
+            // In a real implementation, you'd regenerate it from form data
+            if (currentServiceData && currentServiceData.plist_xml) {
+                document.querySelector('#panel-plist pre').textContent = currentServiceData.plist_xml;
+            }
+        }
+        
+        // Update logs
+        async function updateLogs() {
+            if (!currentServiceId || currentServiceId === 'new') return;
+            
+            try {
+                // Fetch fresh service data to get updated logs
+                const response = await fetch(`/api/service/${currentServiceId}`);
+                const serviceData = await response.json();
+                
+                const stdoutPre = document.querySelector('#panel-stdout pre');
+                const stderrPre = document.querySelector('#panel-stderr pre');
+                
+                if (serviceData.logs && serviceData.logs.stdout) {
+                    stdoutPre.textContent = serviceData.logs.stdout;
+                    stdoutPre.classList.remove('log-empty');
+                } else {
+                    stdoutPre.textContent = 'No stdout logs available';
+                    stdoutPre.classList.add('log-empty');
+                }
+                
+                if (serviceData.logs && serviceData.logs.stderr) {
+                    stderrPre.textContent = serviceData.logs.stderr;
+                    stderrPre.classList.remove('log-empty');
+                } else {
+                    stderrPre.textContent = 'No stderr logs available';
+                    stderrPre.classList.add('log-empty');
+                }
+            } catch (error) {
+                console.error('Error updating logs:', error);
+            }
+        }
+        
+        function switchPanel(type, evt) {
+            document.querySelectorAll('.panel-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            if (evt && evt.target) evt.target.classList.add('active');
+
+            const validPanels = ['plist', 'stdout', 'stderr'];
+            if (!validPanels.includes(type)) return;
+            document.getElementById('panel-plist').classList.add('hidden');
+            document.getElementById('panel-stdout').classList.add('hidden');
+            document.getElementById('panel-stderr').classList.add('hidden');
+            document.getElementById(`panel-${type}`).classList.remove('hidden');
+        }
+
+        // Create new agent
+        async function createNewService(scheduleType) {
+            currentServiceId = 'new';
+            
+            // Fetch default environment variables from backend
+            let defaultEnv = {};
+            try {
+                const response = await fetch('/api/default-env');
+                defaultEnv = await response.json();
+            } catch (error) {
+                console.error('Error fetching default env:', error);
+                // Fallback defaults
+                defaultEnv = {
+                    'HOME': '/Users/user',
+                    'PATH': '/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin',
+                    'USER': 'user'
+                };
+            }
+            
+            currentServiceData = {
+                service_type: 'agent',
+                name: '',
+                label: '',
+                category: '',
+                program: '',
+                schedule_type: scheduleType,  // 'scheduled' or 'keepalive'
+                schedule_times: scheduleType === 'scheduled' ? [{'Hour': 10, 'Minute': 0}] : [],
+                working_directory: '',
+                environment: defaultEnv,
+                plist_xml: ''
+            };
+            
+            // Clear selection
+            document.querySelectorAll('.service-item').forEach(el => {
+                el.classList.remove('selected');
+            });
+            
+            renderEditor();
+            populateForm();
+            
+            // Add event listeners for auto-generating label
+            const nameField = document.getElementById('service_name');
+            const categoryField = document.getElementById('service_category');
+            const labelField = document.getElementById('service_label');
+            
+            function updateLabel() {
+                const name = nameField.value.trim();
+                const category = categoryField.value.trim();
+                if (name && category) {
+                    labelField.value = `user.${category}.${name}`;
+                }
+            }
+            
+            nameField.addEventListener('input', updateLabel);
+            categoryField.addEventListener('input', updateLabel);
+            
+            // Focus on name field
+            document.getElementById('service_name').focus();
+        }
+        
+        // Save service from form submission
+        async function saveService(event) {
+            event.preventDefault();
+            return await performSave(new FormData(event.target));
+        }
+        
+        // Save service from header button
+        async function saveServiceFromHeader() {
+            const form = document.getElementById('service-form');
+            if (!form) return;
+            return await performSave(new FormData(form));
+        }
+        
+        // Perform save operation
+        async function performSave(formData) {
+            const data = Object.fromEntries(formData.entries());
+            
+            // Add schedule_type from currentServiceData
+            if (currentServiceData) {
+                data.schedule_type = currentServiceData.schedule_type;
+            }
+            
+            try {
+                const response = await fetch(`/api/save/${currentServiceId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': getCSRFToken()
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showFlashMessage(result.message, 'success');
+                    // Reload tree and service
+                    await loadServicesTree();
+                    if (currentServiceId === 'new' && result.service_id) {
+                        await loadService(result.service_id);
+                    } else {
+                        await loadService(currentServiceId);
+                    }
+                    // Refresh plist preview after save
+                    updatePlistPreview();
+                } else {
+                    showFlashMessage(result.message, 'error');
+                }
+            } catch (error) {
+                console.error('Error saving service:', error);
+                showFlashMessage('Error saving service', 'error');
+            }
+            
+            return false;
+        }
+        
+        // Control actions
+        async function controlAction(action) {
+            if (!currentServiceId || currentServiceId === 'new') {
+                showFlashMessage('Please save the agent first', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/control/${currentServiceId}/${action}`, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-Token': getCSRFToken()
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showFlashMessage(result.message, 'success');
+                    // Reload agent to update status
+                    await loadService(currentServiceId);
+                    await loadServicesTree();
+                    
+                    // Refresh logs for load/unload/start/stop actions
+                    if (action === 'load' || action === 'start') {
+                        // Wait a moment for logs to be written
+                        setTimeout(() => {
+                            updateLogs();
+                        }, 1000);
+                    }
+                } else {
+                    showFlashMessage(result.message, 'error');
+                }
+            } catch (error) {
+                console.error('Error controlling service:', error);
+                showFlashMessage('Error controlling service', 'error');
+            }
+        }
+        
+        // Run Once - for scheduled agents
+        async function runOnce() {
+            if (!currentServiceId || currentServiceId === 'new') {
+                showFlashMessage('Please save the agent first', 'error');
+                return;
+            }
+            
+            if (!currentServiceData || currentServiceData.schedule_type !== 'scheduled') {
+                showFlashMessage('Run Once is only available for scheduled agents', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/control/${currentServiceId}/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-Token': getCSRFToken()
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showFlashMessage('Agent executed once successfully', 'success');
+                    // Reload agent to update status
+                    await loadService(currentServiceId);
+                    await loadServicesTree();
+                    
+                    // Refresh logs after running once
+                    setTimeout(() => {
+                        updateLogs();
+                    }, 1000);
+                } else {
+                    showFlashMessage(result.message, 'error');
+                }
+            } catch (error) {
+                console.error('Error running service:', error);
+                showFlashMessage('Error running service', 'error');
+            }
+        }
+        
+        // Reload agent - unload and load in launchd
+        async function reloadAgent() {
+            if (!currentServiceId || currentServiceId === 'new') {
+                showFlashMessage('Please save the agent first', 'error');
+                return;
+            }
+            
+            try {
+                // For self-agent, use restart which triggers kickstart on backend
+                if (currentServiceId === 'agent:user.productivity.mac_agents_manager') {
+                    // Fire-and-forget: the server connection will drop during restart, which would otherwise
+                    // surface as a fetch error even though restart succeeded.
+                    try {
+                        fetch(`/control/${currentServiceId}/restart`, {
+                            method: 'POST',
+                            headers: { 'Accept': 'application/json', 'X-CSRF-Token': getCSRFToken() },
+                            keepalive: true
+                        }).catch(() => {});
+                    } catch (_) {}
+                    showFlashMessage('Restarting Mac Agents Manager...', 'info');
+                    // Give the agent a moment to come back, then refresh UI
+                    setTimeout(() => { window.location.reload(); }, 1500);
+                    return;
+                }
+
+                // Default path: unload then load
+                const unloadResponse = await fetch(`/control/${currentServiceId}/unload`, {
+                    method: 'POST',
+                    headers: { 'Accept': 'application/json', 'X-CSRF-Token': getCSRFToken() }
+                });
+                const unloadResult = await unloadResponse.json();
+                if (!unloadResult.success) {
+                    showFlashMessage(`Unload failed: ${unloadResult.message}`, 'error');
+                    return;
+                }
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                const loadResponse = await fetch(`/control/${currentServiceId}/load`, {
+                    method: 'POST',
+                    headers: { 'Accept': 'application/json', 'X-CSRF-Token': getCSRFToken() }
+                });
+                const loadResult = await loadResponse.json();
+                if (loadResult.success) {
+                    showFlashMessage('Agent reloaded successfully', 'success');
+                    await loadService(currentServiceId);
+                    await loadServicesTree();
+                    setTimeout(() => { updateLogs(); }, 1000);
+                } else {
+                    showFlashMessage(loadResult.message, 'error');
+                }
+            } catch (error) {
+                console.error('Error reloading agent:', error);
+                showFlashMessage('Error reloading agent', 'error');
+            }
+        }
+        
+        // Delete service
+        async function deleteService() {
+            if (!currentServiceId || currentServiceId === 'new') return;
+            
+            if (!confirm('Are you sure you want to delete this service? This action cannot be undone.')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/delete/${currentServiceId}`, {
+                    method: 'POST',
+                    headers: { 'X-CSRF-Token': getCSRFToken() }
+                });
+                
+                if (response.ok) {
+                    showFlashMessage('Agent deleted successfully', 'success');
+                    // Clear editor and reload tree
+                    document.getElementById('editor-top').innerHTML = '<div class="welcome"><h2>Welcome to Mac Agents Manager</h2><p>Select an agent from the sidebar to edit, or create a new one.</p></div>';
+                    document.querySelector('#panel-plist pre').textContent = 'No agent selected';
+                    
+                    // Hide editor header
+                    const editorHeader = document.getElementById('editor-header');
+                    if (editorHeader) {
+                        editorHeader.style.display = 'none';
+                    }
+                    
+                    currentServiceId = null;
+                    currentServiceData = null;
+                    await loadServicesTree();
+                } else {
+                    showFlashMessage('Error deleting service', 'error');
+                }
+            } catch (error) {
+                console.error('Error deleting service:', error);
+                showFlashMessage('Error deleting service', 'error');
+            }
+        }
+        
+        // Show sudo modal
+        function showSudoModal(message, command) {
+            document.getElementById('modalMessage').textContent = message;
+            document.getElementById('sudoCommand').textContent = command;
+            document.getElementById('sudoModal').classList.add('show');
+        }
+        
+        // Close modal
+        function closeModal() {
+            document.getElementById('sudoModal').classList.remove('show');
+        }
+        
+        // Copy command
+        function copyCommand() {
+            const command = document.getElementById('sudoCommand').textContent;
+            navigator.clipboard.writeText(command).then(() => {
+                showFlashMessage('Command copied to clipboard!', 'success');
+            });
+        }
+        
+        // Show flash message
+        function showFlashMessage(message, type) {
+            const flash = document.createElement('div');
+            flash.className = `flash-message ${type}`;
+            flash.textContent = message;
+            document.body.appendChild(flash);
+            
+            setTimeout(() => {
+                flash.remove();
+            }, 5000);
+        }
+        
+        // Start all KeepAlive agents
+        async function startAllKeepAlive() {
+            if (!confirm('Start all KeepAlive agents that are currently stopped?')) {
+                return;
+            }
+            showFlashMessage('Starting KeepAlive agents...', 'info');
+            try {
+                const response = await fetch('/api/start-all-keepalive', {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-Token': getCSRFToken()
+                    }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    if (data.count === 0) {
+                        showFlashMessage('All KeepAlive agents are already running!', 'success');
+                    } else {
+                        showFlashMessage(`Started ${data.count} agent(s) successfully!`, 'success');
+                        // Reload services tree
+                        await loadServicesTree();
+                        if (currentServiceId) {
+                            await loadService(currentServiceId);
+                        }
+                    }
+                } else {
+                    showFlashMessage(data.message || 'Error starting services', 'error');
+                }
+            } catch (error) {
+                console.error('Error starting services:', error);
+                showFlashMessage('Error starting services', 'error');
+            }
+        }
+
+        // Theme toggle
+        function toggleTheme() {
+            var html = document.documentElement;
+            var current = html.getAttribute('data-theme') || 'dark';
+            var next = current === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', next);
+            localStorage.setItem('mac-agents-theme', next);
+            updateThemeIcon(next);
+        }
+
+        function updateThemeIcon(theme) {
+            var btn = document.getElementById('theme-toggle-btn');
+            if (btn) btn.textContent = theme === 'dark' ? '🌙' : '☀️';
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            var theme = localStorage.getItem('mac-agents-theme') || 'dark';
+            updateThemeIcon(theme);
+        });
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>
+

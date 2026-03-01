@@ -1,0 +1,155 @@
+{% extends "layout.html" %}
+
+{% block title %}Mac Agents Manager{% endblock %}
+
+{% block content %}
+<div class="ide-container">
+    <!-- Left Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <div class="new-service-buttons">
+                <button class="btn-new" onclick="createNewService('scheduled')">+ New Scheduled</button>
+                <button class="btn-new" onclick="createNewService('keepalive')">+ New KeepAlive</button>
+            </div>
+            <div class="new-service-buttons" style="margin-top: 10px;">
+                <button class="btn-start-all" onclick="startAllKeepAlive()">🚀 Start All KeepAlive</button>
+            </div>
+        </div>
+        
+        <div class="tree-container">
+            <!-- LaunchAgents Section -->
+            <div class="tree-section">
+                <div class="tree-title expanded" onclick="toggleSection(this)">
+                    LaunchAgents
+                </div>
+                <div class="tree-content show" id="agents-tree">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Right Editor Panel -->
+    <main class="editor-panel">
+        <!-- Editor Header with buttons -->
+        <div class="editor-header" id="editor-header" style="display: none;">
+            <div class="editor-title" id="editor-title">Service Editor</div>
+            <div class="editor-actions">
+                <a id="btn-port-link" class="btn btn-port" href="#" target="_blank" style="display: none;"></a>
+                <button type="button" class="btn btn-primary" onclick="saveServiceFromHeader()">Save</button>
+                <button type="button" class="btn btn-secondary" onclick="controlAction('load')" id="btn-load-header">Load</button>
+                <button type="button" class="btn btn-secondary" onclick="controlAction('unload')" id="btn-unload-header">Unload</button>
+                <button type="button" class="btn btn-secondary" onclick="runOnce()" id="btn-runonce-header" style="display: none;">Run Once</button>
+                <button type="button" class="btn btn-secondary" onclick="reloadAgent()" id="btn-reload-header">Reload</button>
+                <button type="button" class="btn btn-danger" onclick="deleteService()">Delete</button>
+            </div>
+        </div>
+        
+        <!-- Top Section - Editor Form -->
+        <div class="editor-top" id="editor-top">
+            <div class="welcome">
+                <h2>Welcome to Mac Agents Manager</h2>
+                <p>Select an agent from the sidebar to edit, or create a new one.</p>
+            </div>
+        </div>
+
+        <!-- Bottom Section - Plist Preview / Logs -->
+        <div class="editor-bottom" id="editor-bottom">
+            <div class="panel-tabs">
+                <button class="panel-tab active" onclick="switchPanel('plist', event)">Plist Preview</button>
+                <button class="panel-tab" onclick="switchPanel('stdout', event)">Stdout</button>
+                <button class="panel-tab" onclick="switchPanel('stderr', event)">Stderr</button>
+            </div>
+            <div class="panel-content">
+                <div id="panel-plist" class="plist-preview">
+                    <pre>No agent selected</pre>
+                </div>
+                <div id="panel-stdout" class="log-viewer hidden">
+                    <pre class="log-empty">No logs available</pre>
+                </div>
+                <div id="panel-stderr" class="log-viewer hidden">
+                    <pre class="log-empty">No logs available</pre>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<!-- Template for Editor Form -->
+<script id="editor-template" type="text/template">
+<div class="editor-form">
+    <form id="service-form" onsubmit="return saveService(event)">
+        <!-- Basic Section -->
+        <div class="form-section">
+            <h3>Basic Information</h3>
+            
+            <div class="form-group">
+                <label for="service_label">Label</label>
+                <input type="text" id="service_label" name="label" readonly>
+                <small>Unique identifier for the agent</small>
+            </div>
+            
+            <div class="form-group">
+                <label for="service_name">Agent Name</label>
+                <input type="text" id="service_name" name="name" required>
+                <small>Short name (e.g., myapp)</small>
+            </div>
+            
+            <div class="form-group">
+                <label for="service_category">Category</label>
+                <input type="text" id="service_category" name="category" required>
+                <small>Category/namespace (e.g., finance, productivity, automation)</small>
+            </div>
+        </div>
+
+        <!-- Execution Section -->
+        <div class="form-section">
+            <h3>Execution</h3>
+            
+            <div class="form-group">
+                <label for="script_path">Script/Command Path *</label>
+                <input type="text" id="script_path" name="script_path" required>
+                <small>Examples: /path/to/script.sh or /bin/bash /path/to/script.sh (output redirects are handled automatically)</small>
+            </div>
+        </div>
+
+        <!-- Schedule Section -->
+        <div class="form-section" id="schedule-section">
+            <h3>Schedule Times</h3>
+            
+            <div class="form-group">
+                <label>Schedule Times</label>
+                <div class="schedule-times" id="schedule-times">
+                    <div class="time-slot">
+                        <label>Hour:</label>
+                        <input type="number" name="schedule_hour_0" min="0" max="23" value="10">
+                        <label>Minute:</label>
+                        <input type="number" name="schedule_minute_0" min="0" max="59" value="0">
+                    </div>
+                </div>
+                <button type="button" class="btn-add-time" onclick="addTimeSlot()">+ Add Time</button>
+            </div>
+        </div>
+
+        <!-- Optional Section -->
+        <div class="form-section">
+            <h3>Optional Settings</h3>
+            
+            <div class="form-group">
+                <label for="working_directory">Working Directory</label>
+                <input type="text" id="working_directory" name="working_directory">
+                <small>Optional: Directory to run the script from (e.g., /Users/username/myproject)</small>
+            </div>
+            
+            <div class="form-group">
+                <label for="environment">Environment Variables</label>
+                <textarea id="environment" name="environment" rows="4"></textarea>
+                <small>One per line in KEY=VALUE format</small>
+            </div>
+        </div>
+
+    </form>
+</div>
+</script>
+{% endblock %}
+
