@@ -7,6 +7,7 @@ from pathlib import Path
 
 from flask import Flask, abort, flash, jsonify, redirect, render_template, request, url_for
 
+from mac_agents_manager.constants import MAM_LABEL
 from mac_agents_manager.launchctl import LaunchCtlController
 from mac_agents_manager.models import ALLOWED_LOG_DIRS, LaunchService
 
@@ -211,10 +212,17 @@ def delete(service_id):
     return redirect(url_for('index'))
 
 
+_VALID_ACTIONS = frozenset({'load', 'unload', 'start', 'stop', 'restart'})
+
+
 @app.route('/control/<path:service_id>/<action>', methods=['POST'])
 def control(service_id, action):
     """Control a service (load, unload, start, stop, restart)."""
     _check_csrf()
+
+    if action not in _VALID_ACTIONS:
+        return jsonify({'success': False, 'message': 'Invalid action'}), 400
+
     try:
         service = LaunchService.from_service_id(service_id)
     except ValueError:
@@ -229,8 +237,7 @@ def control(service_id, action):
     if action == 'load':
         success, message = controller.load(service.label, plist_path)
     elif action == 'unload':
-        # Protect self-agent from being unloaded to avoid orphaning the UI
-        if service.label == 'user.productivity.mac_agents_manager':
+        if service.label == MAM_LABEL:
             return jsonify({'success': False, 'message': 'Unload disabled for Mac Agents Manager. Use reload.'}), 400
         success, message = controller.unload(service.label, plist_path)
     elif action == 'start':
@@ -238,13 +245,10 @@ def control(service_id, action):
     elif action == 'stop':
         success, message = controller.stop(service.label)
     elif action == 'restart':
-        # Prefer kickstart for self-agent to avoid unload/load race
-        if service.label == 'user.productivity.mac_agents_manager':
+        if service.label == MAM_LABEL:
             success, message = controller.kickstart(service.label)
         else:
             success, message = controller.restart(service.label, plist_path)
-    else:
-        return jsonify({'success': False, 'message': 'Invalid action'}), 400
 
     response = {
         'success': success,

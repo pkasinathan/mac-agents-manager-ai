@@ -403,3 +403,38 @@ class TestLabelRegex:
 
     def test_rejects_slashes(self):
         assert not LABEL_RE.match("user/path")
+
+
+class TestPortDetectionFromProcess:
+    def test_detect_port_uses_exact_label_match(self, monkeypatch):
+        svc = LaunchService("user.test.app")
+
+        class FakeResult:
+            def __init__(self, stdout="", returncode=0):
+                self.stdout = stdout
+                self.returncode = returncode
+
+        def fake_run(cmd, capture_output=True, text=True, timeout=2):
+            if cmd[:2] == ["launchctl", "list"]:
+                return FakeResult(
+                    "PID Status Label\n"
+                    "111 0 user.test.app-helper\n"
+                    "222 0 user.test.app\n"
+                )
+            if cmd and cmd[0] == "/usr/sbin/lsof":
+                assert "-p" in cmd
+                pid = cmd[cmd.index("-p") + 1]
+                if pid == "222":
+                    return FakeResult(
+                        "COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\n"
+                        "python3 222 user 5u IPv4 0x123 TCP *:8123 (LISTEN)\n"
+                    )
+                return FakeResult(
+                    "COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\n"
+                    "python3 111 user 5u IPv4 0x123 TCP *:9999 (LISTEN)\n"
+                )
+            raise AssertionError(f"Unexpected command: {cmd}")
+
+        monkeypatch.setattr("mac_agents_manager.models.subprocess.run", fake_run)
+
+        assert svc._detect_port_from_process() == 8123

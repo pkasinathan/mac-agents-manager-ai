@@ -1,6 +1,7 @@
 """CLI entry point for Mac Agents Manager."""
 import argparse
 import os
+import plistlib
 import subprocess
 import sys
 import time
@@ -8,6 +9,8 @@ from collections import deque
 from pathlib import Path
 
 from mac_agents_manager import __version__
+from mac_agents_manager.constants import MAM_LABEL
+from mac_agents_manager.launchctl_list import launchctl_list_contains_label
 from mac_agents_manager.models import ALLOWED_LOG_DIRS
 
 # ---------------------------------------------------------------------------
@@ -15,7 +18,6 @@ from mac_agents_manager.models import ALLOWED_LOG_DIRS
 # ---------------------------------------------------------------------------
 
 LAUNCH_AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
-MAM_LABEL = "user.productivity.mac_agents_manager"
 MAM_PLIST = LAUNCH_AGENTS_DIR / f"{MAM_LABEL}.plist"
 MAM_LOG_DIR = Path.home() / ".mac_agents_manager" / "logs"
 
@@ -56,7 +58,7 @@ def _is_loaded(label: str) -> bool:
         ["launchctl", "list"],
         capture_output=True, text=True, timeout=5,
     )
-    return label in r.stdout
+    return launchctl_list_contains_label(r.stdout, label)
 
 
 def _get_mam_pid() -> int | None:
@@ -95,51 +97,30 @@ def _generate_plist():
     if venv_bin not in path_parts:
         path_parts.insert(0, venv_bin)
 
-    stdout_log = str(MAM_LOG_DIR / "webserver.log")
-    stderr_log = str(MAM_LOG_DIR / "webserver.error.log")
+    plist_data = {
+        "Label": MAM_LABEL,
+        "ProgramArguments": [
+            python_path,
+            "-m", "mac_agents_manager.cli",
+            "serve",
+            "--host", "127.0.0.1",
+            "--port", port,
+        ],
+        "RunAtLoad": True,
+        "KeepAlive": True,
+        "EnvironmentVariables": {
+            "HOME": home_dir,
+            "PATH": ":".join(path_parts),
+            "USER": user_name,
+            "MAM_PORT": port,
+        },
+        "StandardOutPath": str(MAM_LOG_DIR / "webserver.log"),
+        "StandardErrorPath": str(MAM_LOG_DIR / "webserver.error.log"),
+        "ProcessType": "Interactive",
+    }
 
-    plist_content = f"""\
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" \
-"http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>{MAM_LABEL}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{python_path}</string>
-        <string>-m</string>
-        <string>mac_agents_manager.cli</string>
-        <string>serve</string>
-        <string>--port</string>
-        <string>{port}</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>HOME</key>
-        <string>{home_dir}</string>
-        <key>PATH</key>
-        <string>{":".join(path_parts)}</string>
-        <key>USER</key>
-        <string>{user_name}</string>
-        <key>MAM_PORT</key>
-        <string>{port}</string>
-    </dict>
-    <key>StandardOutPath</key>
-    <string>{stdout_log}</string>
-    <key>StandardErrorPath</key>
-    <string>{stderr_log}</string>
-    <key>ProcessType</key>
-    <string>Interactive</string>
-</dict>
-</plist>
-"""
-    MAM_PLIST.write_text(plist_content)
+    with open(MAM_PLIST, "wb") as f:
+        plistlib.dump(plist_data, f, sort_keys=False)
     MAM_PLIST.chmod(0o644)
 
 

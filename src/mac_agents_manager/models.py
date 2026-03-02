@@ -9,6 +9,8 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Optional
 
+from mac_agents_manager.launchctl_list import launchctl_list_pid_for_label
+
 logger = logging.getLogger(__name__)
 
 _home = str(Path.home())
@@ -315,14 +317,7 @@ class LaunchService:
                 timeout=2
             )
 
-            pid = None
-            for line in result.stdout.splitlines():
-                if self.label in line:
-                    parts = line.split()
-                    if parts and parts[0].isdigit():
-                        pid = parts[0]
-                        break
-
+            pid = launchctl_list_pid_for_label(result.stdout, self.label)
             if not pid or pid == '-':
                 return None
 

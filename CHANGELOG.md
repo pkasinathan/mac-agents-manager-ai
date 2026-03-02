@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.2] - 2026-03-02
+
+### Fixed
+
+- Parse `launchctl list` output by exact label token instead of substring matching to avoid false positives (for both loaded-state checks and PID lookups).
+- Hardened web control endpoint action handling and centralized the self-agent label constant used by CLI/web paths.
+- Generate the self-agent plist via `plistlib` and force localhost binding in `ProgramArguments` for safer defaults.
+
 ## [1.1.1] - 2026-03-01
 
 ### Fixed
