@@ -6,6 +6,15 @@
 pip install mac-agents-manager-ai
 ```
 
+Or in a dedicated virtual environment:
+
+```bash
+mkdir -p ~/.mac_agents_manager
+python3 -m venv ~/.mac_agents_manager/venv
+source ~/.mac_agents_manager/venv/bin/activate
+pip install mac-agents-manager-ai
+```
+
 ## 2. Start
 
 ```bash
@@ -21,16 +30,6 @@ mam open
 ```
 
 Or visit **http://localhost:8081** in your browser.
-
-## 4. Auto-Start at Login (optional)
-
-```bash
-git clone https://github.com/pkasinathan/mac-agents-manager.git
-cd mac-agents-manager
-bash install.sh
-```
-
-This installs Mac Agents Manager as a LaunchAgent so the dashboard starts automatically when you log in.
 
 ## Useful Commands
 

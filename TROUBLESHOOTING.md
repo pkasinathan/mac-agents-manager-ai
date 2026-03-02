@@ -44,8 +44,9 @@ brew install python@3.10
 After installation, it's available as `python3.10` and `pip3.10`. Create a virtual environment:
 
 ```bash
-python3.10 -m venv ~/.mam-venv
-source ~/.mam-venv/bin/activate
+mkdir -p ~/.mac_agents_manager
+python3.10 -m venv ~/.mac_agents_manager/venv
+source ~/.mac_agents_manager/venv/bin/activate
 pip install mac-agents-manager-ai
 ```
 
@@ -106,58 +107,34 @@ mam
 
 ---
 
-## LaunchAgent not starting
+## `mam: command not found` after install
 
 ### Symptoms
 
-- Running `bash install.sh` completes but the dashboard is not accessible at http://localhost:8081
-- `mam list` shows the agent as "not loaded" or "stopped"
-- `launchctl load` returns an error
+- Running `mam` returns `zsh: command not found: mam`
+- `pip install mac-agents-manager-ai` completed successfully
 
 ### Cause
 
-Common causes:
-
-- The plist file references a stale virtual environment path (e.g. the project folder was moved)
-- The `scripts/start.sh` file is not executable
-- Python or the `mam` command is not found inside the virtual environment
+If you installed into a virtual environment, the `mam` command is only available when that environment is activated. If you installed globally, the install directory may not be on your `PATH`.
 
 ### Fix
 
-#### Step 1: Check the agent status
+#### If installed in a virtual environment
+
+Activate the environment first:
 
 ```bash
-launchctl list | grep mac_agents_manager
-```
-
-If nothing is returned, the agent is not loaded.
-
-#### Step 2: Re-run the install script
-
-If you moved the project folder or recreated the virtual environment:
-
-```bash
-cd /path/to/mac-agents-manager
-bash install.sh
-```
-
-This rebuilds the virtual environment and generates a new plist with the correct paths.
-
-#### Step 3: Check logs
-
-```bash
-cat /tmp/mac_agents_manager.out
-cat /tmp/mac_agents_manager.err
-```
-
-These files contain stdout and stderr output from the LaunchAgent process.
-
-#### Step 4: Verify manually
-
-```bash
-cd /path/to/mac-agents-manager
-source venv/bin/activate
+source ~/.mac_agents_manager/venv/bin/activate
 mam
 ```
 
-If this works, the issue is with the plist paths. Re-run `install.sh` to regenerate them.
+#### If installed globally
+
+Check where pip installed the script:
+
+```bash
+python3 -m pip show mac-agents-manager-ai
+```
+
+Ensure the `bin/` directory from the install location is on your `PATH`. On macOS with Homebrew Python, this is typically `~/Library/Python/3.x/bin/` or `/opt/homebrew/bin/`.

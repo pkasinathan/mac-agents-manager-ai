@@ -67,6 +67,12 @@ pip3 install mac-agents-manager-ai
 
 # Or with uv
 uv pip install mac-agents-manager-ai
+
+# Or in a dedicated virtual environment
+mkdir -p ~/.mac_agents_manager
+python3 -m venv ~/.mac_agents_manager/venv
+source ~/.mac_agents_manager/venv/bin/activate
+pip install mac-agents-manager-ai
 ```
 
 ### Run
@@ -77,7 +83,12 @@ mam
 
 # Or explicitly
 mam serve --port 8081
+
+# Open the dashboard
+mam open
 ```
+
+The dashboard is at **http://localhost:8081**.
 
 ### Verify
 
@@ -88,18 +99,6 @@ mam list
 # Check version
 mam --version
 ```
-
-### Install as LaunchAgent (auto-start at login)
-
-```bash
-git clone https://github.com/pkasinathan/mac-agents-manager.git
-cd mac-agents-manager
-bash install.sh
-```
-
-This creates a virtual environment, installs the package, generates a plist at `~/Library/LaunchAgents/user.productivity.mac_agents_manager.plist`, and starts the web app.
-
-The dashboard is at **http://localhost:8081**.
 
 ## CLI Reference
 
@@ -174,12 +173,8 @@ make check
 ## Uninstall
 
 ```bash
-# If installed via pip
 pip3 uninstall mac-agents-manager-ai
-
-# If installed as a LaunchAgent
-launchctl unload ~/Library/LaunchAgents/user.productivity.mac_agents_manager.plist
-rm ~/Library/LaunchAgents/user.productivity.mac_agents_manager.plist
+rm -rf ~/.mac_agents_manager
 ```
 
 ## License
