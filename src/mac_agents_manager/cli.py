@@ -3,11 +3,21 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 from collections import deque
 from pathlib import Path
 
 from mac_agents_manager import __version__
 from mac_agents_manager.models import ALLOWED_LOG_DIRS
+
+# ---------------------------------------------------------------------------
+# Constants — self-install as a LaunchAgent
+# ---------------------------------------------------------------------------
+
+LAUNCH_AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
+MAM_LABEL = "user.productivity.mac_agents_manager"
+MAM_PLIST = LAUNCH_AGENTS_DIR / f"{MAM_LABEL}.plist"
+MAM_LOG_DIR = Path.home() / ".mac_agents_manager" / "logs"
 
 
 def _get_services():
@@ -34,6 +44,219 @@ def _resolve_service(label):
         print(f"Error: could not parse plist for '{label}'", file=sys.stderr)
         sys.exit(1)
     return loaded
+
+
+# ---------------------------------------------------------------------------
+# Helpers — self-install as LaunchAgent
+# ---------------------------------------------------------------------------
+
+
+def _is_loaded(label: str) -> bool:
+    r = subprocess.run(
+        ["launchctl", "list"],
+        capture_output=True, text=True, timeout=5,
+    )
+    return label in r.stdout
+
+
+def _get_mam_pid() -> int | None:
+    r = subprocess.run(
+        ["launchctl", "list", MAM_LABEL],
+        capture_output=True, text=True, timeout=5,
+    )
+    if r.returncode != 0:
+        return None
+    import re
+    for line in r.stdout.splitlines():
+        if '"PID"' in line or "PID" in line:
+            m = re.search(r"(\d+)", line.split("=")[-1] if "=" in line else line)
+            if m:
+                val = int(m.group(1))
+                return val if val > 0 else None
+    return None
+
+
+def _generate_plist():
+    """Generate a plist file for Mac Agents Manager itself."""
+    LAUNCH_AGENTS_DIR.mkdir(parents=True, exist_ok=True)
+    MAM_LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    python_path = sys.executable
+    port = os.environ.get("MAM_PORT", "8081")
+
+    user_name = os.environ.get("USER", "user")
+    home_dir = os.environ.get("HOME", f"/Users/{user_name}")
+
+    path_parts = ["/usr/local/bin", "/usr/bin", "/bin", "/opt/homebrew/bin"]
+    pyenv_shims = f"{home_dir}/.pyenv/shims"
+    if Path(pyenv_shims).is_dir():
+        path_parts.append(pyenv_shims)
+    venv_bin = str(Path(python_path).parent)
+    if venv_bin not in path_parts:
+        path_parts.insert(0, venv_bin)
+
+    stdout_log = str(MAM_LOG_DIR / "webserver.log")
+    stderr_log = str(MAM_LOG_DIR / "webserver.error.log")
+
+    plist_content = f"""\
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" \
+"http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{MAM_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{python_path}</string>
+        <string>-m</string>
+        <string>mac_agents_manager.cli</string>
+        <string>serve</string>
+        <string>--port</string>
+        <string>{port}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>{home_dir}</string>
+        <key>PATH</key>
+        <string>{":".join(path_parts)}</string>
+        <key>USER</key>
+        <string>{user_name}</string>
+        <key>MAM_PORT</key>
+        <string>{port}</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>{stdout_log}</string>
+    <key>StandardErrorPath</key>
+    <string>{stderr_log}</string>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+</dict>
+</plist>
+"""
+    MAM_PLIST.write_text(plist_content)
+    MAM_PLIST.chmod(0o644)
+
+
+def cmd_service_install(args):
+    """Install Mac Agents Manager as a macOS LaunchAgent (auto-start at login)."""
+    if _is_loaded(MAM_LABEL):
+        subprocess.run(["launchctl", "unload", str(MAM_PLIST)], capture_output=True)
+        time.sleep(1)
+
+    _generate_plist()
+    subprocess.run(["launchctl", "load", str(MAM_PLIST)], capture_output=True)
+    time.sleep(1)
+
+    if _is_loaded(MAM_LABEL):
+        port = os.environ.get("MAM_PORT", "8081")
+        print(f"✓ Installed and started (http://localhost:{port})")
+        print(f"  Plist: {MAM_PLIST}")
+        print(f"  Logs:  {MAM_LOG_DIR}/")
+    else:
+        print("✗ Failed to start — check logs:", file=sys.stderr)
+        print(f"  {MAM_LOG_DIR / 'webserver.error.log'}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_service_uninstall(args):
+    """Uninstall Mac Agents Manager LaunchAgent."""
+    if _is_loaded(MAM_LABEL):
+        subprocess.run(["launchctl", "unload", str(MAM_PLIST)], capture_output=True)
+        time.sleep(1)
+
+    if MAM_PLIST.exists():
+        MAM_PLIST.unlink()
+        print(f"✓ Uninstalled ({MAM_LABEL})")
+    else:
+        print(f"Not installed ({MAM_PLIST} does not exist)")
+
+
+def cmd_service_start(args):
+    """Start the Mac Agents Manager LaunchAgent."""
+    if not MAM_PLIST.exists():
+        print("Not installed. Run 'mam service install' first.", file=sys.stderr)
+        sys.exit(1)
+
+    if _is_loaded(MAM_LABEL) and _get_mam_pid():
+        print("Already running")
+        return
+
+    if not _is_loaded(MAM_LABEL):
+        subprocess.run(["launchctl", "load", str(MAM_PLIST)], capture_output=True)
+    else:
+        subprocess.run(["launchctl", "start", MAM_LABEL], capture_output=True)
+    time.sleep(1)
+
+    if _is_loaded(MAM_LABEL):
+        port = os.environ.get("MAM_PORT", "8081")
+        print(f"✓ Started (http://localhost:{port})")
+    else:
+        print("✗ Failed to start", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_service_stop(args):
+    """Stop the Mac Agents Manager LaunchAgent."""
+    if not _is_loaded(MAM_LABEL):
+        print("Not running")
+        return
+
+    subprocess.run(["launchctl", "unload", str(MAM_PLIST)], capture_output=True)
+    time.sleep(1)
+    print("✓ Stopped")
+
+
+def cmd_service_restart(args):
+    """Restart the Mac Agents Manager LaunchAgent."""
+    if not MAM_PLIST.exists():
+        print("Not installed. Run 'mam service install' first.", file=sys.stderr)
+        sys.exit(1)
+
+    if _is_loaded(MAM_LABEL):
+        subprocess.run(["launchctl", "unload", str(MAM_PLIST)], capture_output=True)
+        time.sleep(1)
+
+    _generate_plist()
+    subprocess.run(["launchctl", "load", str(MAM_PLIST)], capture_output=True)
+    time.sleep(1)
+
+    if _is_loaded(MAM_LABEL):
+        port = os.environ.get("MAM_PORT", "8081")
+        print(f"✓ Restarted (http://localhost:{port})")
+    else:
+        print("✗ Failed to restart", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_service_status(args):
+    """Show Mac Agents Manager service status."""
+    if not MAM_PLIST.exists():
+        print("  Mac Agents Manager: not installed")
+        print("  Run 'mam service install' to install as a LaunchAgent")
+        return
+
+    pid = _get_mam_pid()
+    if _is_loaded(MAM_LABEL) and pid:
+        port = os.environ.get("MAM_PORT", "8081")
+        print(f"  ● running (PID {pid}, http://localhost:{port})")
+    elif _is_loaded(MAM_LABEL):
+        print("  ○ loaded but not running")
+    else:
+        print("  - not loaded (plist exists but not active)")
+
+    print(f"  Plist: {MAM_PLIST}")
+    print(f"  Logs:  {MAM_LOG_DIR}/")
+
+
+# ---------------------------------------------------------------------------
+# Commands — web server
+# ---------------------------------------------------------------------------
 
 
 def cmd_serve(args):
@@ -275,6 +498,20 @@ def main():
     )
     subparsers = parser.add_subparsers(dest='command')
 
+    # service (self-install as LaunchAgent)
+    p_service = subparsers.add_parser('service', help='manage Mac Agents Manager as a LaunchAgent')
+    service_sub = p_service.add_subparsers(dest='service_action')
+    for action, helptext, func in [
+        ('install', 'install as a LaunchAgent (auto-start at login)', cmd_service_install),
+        ('uninstall', 'uninstall the LaunchAgent', cmd_service_uninstall),
+        ('start', 'start the LaunchAgent', cmd_service_start),
+        ('stop', 'stop the LaunchAgent', cmd_service_stop),
+        ('restart', 'restart the LaunchAgent', cmd_service_restart),
+        ('status', 'show service status', cmd_service_status),
+    ]:
+        sp = service_sub.add_parser(action, help=helptext)
+        sp.set_defaults(func=func)
+
     # serve
     p_serve = subparsers.add_parser('serve', help='start the web server')
     p_serve.add_argument('-p', '--port', type=int,
@@ -355,6 +592,8 @@ def main():
         args.host = '127.0.0.1'
         args.debug = os.environ.get('FLASK_DEBUG', '').lower() in ('1', 'true')
         cmd_serve(args)
+    elif args.command == 'service' and not getattr(args, 'service_action', None):
+        p_service.print_help()
     else:
         args.func(args)
 

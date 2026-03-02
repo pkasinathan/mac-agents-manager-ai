@@ -78,11 +78,11 @@ pip install mac-agents-manager-ai
 ### Run
 
 ```bash
-# Start the web dashboard (default: http://localhost:8081)
-mam
+# Install as macOS service (auto-start at login)
+mam service install
 
-# Or explicitly
-mam serve --port 8081
+# Or start manually
+mam serve
 
 # Open the dashboard
 mam open
@@ -93,6 +93,9 @@ The dashboard is at **http://localhost:8081**.
 ### Verify
 
 ```bash
+# Check service status
+mam service status
+
 # List all LaunchAgents
 mam list
 
@@ -105,6 +108,10 @@ mam --version
 ```
 mam                              # Start web server (default)
 mam serve [-p PORT] [--debug]    # Start web server
+mam service install              # Install as LaunchAgent (auto-start at login)
+mam service uninstall            # Uninstall the LaunchAgent
+mam service start|stop|restart   # Control the LaunchAgent service
+mam service status               # Show service status
 mam list                         # List all agents with status
 mam show <label>                 # Show agent details and plist XML
 mam create <name> -c CAT -s SCRIPT [-t keepalive|scheduled]
@@ -173,6 +180,7 @@ make check
 ## Uninstall
 
 ```bash
+mam service uninstall
 pip3 uninstall mac-agents-manager-ai
 rm -rf ~/.mac_agents_manager
 ```

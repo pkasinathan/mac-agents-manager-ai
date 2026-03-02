@@ -18,10 +18,10 @@ pip install mac-agents-manager-ai
 ## 2. Start
 
 ```bash
-mam
+mam service install
 ```
 
-This starts the web dashboard at **http://localhost:8081**.
+This installs Mac Agents Manager as a LaunchAgent that auto-starts at login.
 
 ## 3. Open Dashboard
 
@@ -34,6 +34,10 @@ Or visit **http://localhost:8081** in your browser.
 ## Useful Commands
 
 ```bash
+mam service status    # Check service status
+mam service stop      # Stop the service
+mam service start     # Start the service
+mam service restart   # Restart the service
 mam list              # List all agents with status
 mam show <label>      # Show agent details
 mam start <label>     # Start an agent

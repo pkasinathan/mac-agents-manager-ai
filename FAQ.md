@@ -54,7 +54,13 @@ pip install mac-agents-manager-ai
 
 ### How do I start it?
 
-Run `mam` to start the web dashboard:
+Install as a macOS service that auto-starts at login:
+
+```bash
+mam service install
+```
+
+Or start manually (foreground):
 
 ```bash
 mam
@@ -72,6 +78,12 @@ mam open
 |---------|-------------|
 | `mam` | Start the web server (default when no subcommand given) |
 | `mam serve [-p PORT] [--debug]` | Start the web server with options |
+| `mam service install` | Install as a LaunchAgent (auto-start at login) |
+| `mam service uninstall` | Uninstall the LaunchAgent |
+| `mam service start` | Start the LaunchAgent service |
+| `mam service stop` | Stop the LaunchAgent service |
+| `mam service restart` | Restart the LaunchAgent service |
+| `mam service status` | Show service status |
 | `mam list` | List all agents with status |
 | `mam show <label>` | Show agent details and plist XML |
 | `mam create <name> -c CAT -s SCRIPT [-t TYPE]` | Create a new agent |
@@ -298,6 +310,7 @@ make check     # Run lint + tests together
 ### How do I uninstall?
 
 ```bash
+mam service uninstall
 pip3 uninstall mac-agents-manager-ai
 rm -rf ~/.mac_agents_manager
 ```
