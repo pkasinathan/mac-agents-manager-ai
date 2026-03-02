@@ -766,7 +766,7 @@ body > header .header-right {
 /* Flash Messages */
 .flash-message {
   position: fixed;
-  top: 70px;
+  bottom: 20px;
   right: 20px;
   padding: 15px 20px;
   border-radius: 4px;
@@ -779,11 +779,11 @@ body > header .header-right {
 
 @keyframes slideIn {
   from {
-    transform: translateX(400px);
+    transform: translateY(40px);
     opacity: 0;
   }
   to {
-    transform: translateX(0);
+    transform: translateY(0);
     opacity: 1;
   }
 }
