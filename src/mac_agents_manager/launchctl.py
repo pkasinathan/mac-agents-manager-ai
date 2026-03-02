@@ -1,7 +1,7 @@
 """LaunchCtl controller for managing services."""
 import logging
 import subprocess
-from typing import Any, Dict, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +10,7 @@ class LaunchCtlController:
     """Handle launchctl operations for services."""
 
     @staticmethod
-    def get_status(service_label: str) -> Dict[str, Any]:
+    def get_status(service_label: str) -> dict[str, Any]:
         """Get the status of a service."""
         try:
             # Try to get service info
@@ -29,9 +29,9 @@ class LaunchCtlController:
                 pid = None
                 if '"PID" = ' in output:
                     try:
-                        pid_line = [line for line in output.split('\n') if '"PID" = ' in line][0]
+                        pid_line = next(line for line in output.split('\n') if '"PID" = ' in line)
                         pid = pid_line.split('=')[1].strip().rstrip(';').strip()
-                    except (IndexError, ValueError):
+                    except (StopIteration, IndexError, ValueError):
                         pid = None
 
                 # Service is running if it has a valid PID
@@ -50,7 +50,7 @@ class LaunchCtlController:
             return {'loaded': False, 'running': False, 'pid': None, 'error': 'status check failed'}
 
     @staticmethod
-    def load(service_label: str, plist_path: str) -> Tuple[bool, str]:
+    def load(service_label: str, plist_path: str) -> tuple[bool, str]:
         """
         Load a service.
 
@@ -75,7 +75,7 @@ class LaunchCtlController:
             return False, "Error loading service"
 
     @staticmethod
-    def unload(service_label: str, plist_path: str) -> Tuple[bool, str]:
+    def unload(service_label: str, plist_path: str) -> tuple[bool, str]:
         """
         Unload a service.
 
@@ -100,7 +100,7 @@ class LaunchCtlController:
             return False, "Error unloading service"
 
     @staticmethod
-    def start(service_label: str) -> Tuple[bool, str]:
+    def start(service_label: str) -> tuple[bool, str]:
         """
         Start a service.
 
@@ -125,7 +125,7 @@ class LaunchCtlController:
             return False, "Error starting service"
 
     @staticmethod
-    def stop(service_label: str) -> Tuple[bool, str]:
+    def stop(service_label: str) -> tuple[bool, str]:
         """
         Stop a service.
 
@@ -150,7 +150,7 @@ class LaunchCtlController:
             return False, "Error stopping service"
 
     @staticmethod
-    def restart(service_label: str, plist_path: str) -> Tuple[bool, str]:
+    def restart(service_label: str, plist_path: str) -> tuple[bool, str]:
         """
         Restart a service (stop and start).
 
@@ -177,7 +177,7 @@ class LaunchCtlController:
             return False, "Error restarting service"
 
     @staticmethod
-    def kickstart(service_label: str) -> Tuple[bool, str]:
+    def kickstart(service_label: str) -> tuple[bool, str]:
         """
         Restart a service using launchctl kickstart -k (without unloading).
         This is safer for reloading the UI's own agent.
@@ -204,7 +204,7 @@ class LaunchCtlController:
             return False, "Error restarting service"
 
     @staticmethod
-    def bootout(service_label: str) -> Tuple[bool, str]:
+    def bootout(service_label: str) -> tuple[bool, str]:
         """
         Bootout (remove) a service using newer launchctl syntax.
 

@@ -7,10 +7,10 @@ name = "mac-agents-manager-ai"
 version = "1.1.1"
 description = "A web UI for managing macOS LaunchAgents -- create, edit, start, stop, and reload agents from your browser"
 readme = "README.md"
-license = "Apache-2.0"
+license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
 authors = [
-    { name = "Mac Agents Manager Contributors" },
+    {name = "Mac Agents Manager Contributors"},
 ]
 keywords = ["macos", "launchagent", "launchd", "automation", "system-administration"]
 classifiers = [
@@ -41,9 +41,12 @@ mam = "mac_agents_manager.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/pkasinathan/mac-agents-manager"
+Documentation = "https://github.com/pkasinathan/mac-agents-manager#readme"
 Repository = "https://github.com/pkasinathan/mac-agents-manager"
 Issues = "https://github.com/pkasinathan/mac-agents-manager/issues"
 Changelog = "https://github.com/pkasinathan/mac-agents-manager/blob/main/CHANGELOG.md"
+
+# ── Setuptools ────────────────────────────────────────────────────────────────
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -54,12 +57,52 @@ mac_agents_manager = [
     "static/*.css",
 ]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
+# ── Ruff (replaces black + flake8 + isort) ──────────────────────────────────
 
 [tool.ruff]
-target-version = "py310"
 line-length = 120
+target-version = "py310"
+src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I"]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "N",    # pep8-naming
+    "B",    # flake8-bugbear
+    "A",    # flake8-builtins
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",    # line too long (handled by formatter)
+    "A002",    # shadowing builtins (e.g. `type`, `format`)
+    "UP007",   # Optional[X] -> X | None (keep for 3.10 compat)
+    "SIM102",  # nested if → combined (readability preference)
+    "SIM117",  # multiple with → combined (readability preference)
+    "SIM108",  # ternary instead of if/else (readability preference)
+    "SIM105",  # contextlib.suppress (readability preference)
+    "B904",    # raise from (gradual migration)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"src/mac_agents_manager/cli.py" = ["N806"]
+"src/mac_agents_manager/models.py" = ["E722"]
+"tests/*" = ["W293", "W291", "F841", "F401", "F821", "E722", "B007", "B017", "RUF059"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["mac_agents_manager"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ── Pytest ───────────────────────────────────────────────────────────────────
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"

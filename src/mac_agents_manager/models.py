@@ -7,7 +7,7 @@ import shlex
 import subprocess
 from collections import deque
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ class LaunchService:
             return None
 
     @classmethod
-    def list_all(cls) -> List['LaunchService']:
+    def list_all(cls) -> list['LaunchService']:
         """List all LaunchAgents."""
         services = []
 
@@ -100,7 +100,7 @@ class LaunchService:
     DEFAULT_LABEL_PREFIXES = ('user.', 'com.user.')
 
     @classmethod
-    def list_user_services(cls) -> List['LaunchService']:
+    def list_user_services(cls) -> list['LaunchService']:
         """List only user-created services matching known label prefixes.
 
         Extra prefixes can be added via the MAM_LABEL_PREFIXES env var
@@ -115,7 +115,7 @@ class LaunchService:
                 any(s.label.startswith(p) for p in prefixes)]
 
     @classmethod
-    def get_services_tree(cls) -> Dict[str, Any]:
+    def get_services_tree(cls) -> dict[str, Any]:
         """
         Get services organized in a tree structure by schedule type and namespace.
 
@@ -221,7 +221,7 @@ class LaunchService:
             return 'scheduled'
         return 'unknown'
 
-    def get_schedule_times(self) -> List[Dict[str, int]]:
+    def get_schedule_times(self) -> list[dict[str, int]]:
         """Get scheduled times if this is a scheduled service."""
         intervals = self.data.get('StartCalendarInterval', [])
         if isinstance(intervals, dict):
@@ -229,7 +229,7 @@ class LaunchService:
             return [intervals]
         return intervals
 
-    def get_log_paths(self) -> Dict[str, str]:
+    def get_log_paths(self) -> dict[str, str]:
         """Get stdout and stderr log paths."""
         return {
             'stdout': self.data.get('StandardOutPath', ''),
@@ -240,11 +240,11 @@ class LaunchService:
         """Get the working directory."""
         return self.data.get('WorkingDirectory', '')
 
-    def get_environment(self) -> Dict[str, str]:
+    def get_environment(self) -> dict[str, str]:
         """Get environment variables."""
         return self.data.get('EnvironmentVariables', {})
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert service to dictionary for JSON API."""
         return {
             'service_id': self.service_id,
@@ -262,7 +262,7 @@ class LaunchService:
             'port': self.get_port()
         }
 
-    def get_port(self) -> Optional[int]:
+    def get_port(self) -> int | None:
         """
         Dynamically detect the port this service runs on.
         Uses multiple strategies in order of reliability:
@@ -299,7 +299,7 @@ class LaunchService:
 
         return None
 
-    def _detect_port_from_process(self) -> Optional[int]:
+    def _detect_port_from_process(self) -> int | None:
         """Detect port by checking what the running process is listening on."""
         try:
             # Get PID of the service if it's running
@@ -343,7 +343,7 @@ class LaunchService:
 
         return None
 
-    def _detect_port_from_description(self) -> Optional[int]:
+    def _detect_port_from_description(self) -> int | None:
         """Parse port number from plist Description field."""
         description = self.data.get('Description', '')
         if description:
@@ -353,7 +353,7 @@ class LaunchService:
                 return int(match.group(1))
         return None
 
-    def _detect_port_from_logs(self) -> Optional[int]:
+    def _detect_port_from_logs(self) -> int | None:
         """Parse port number from stdout logs."""
         log_paths = self.get_log_paths()
         stdout_path = log_paths.get('stdout', '')
@@ -366,7 +366,7 @@ class LaunchService:
 
         if Path(resolved).exists():
             try:
-                with open(resolved, 'r') as f:
+                with open(resolved) as f:
                     lines = deque(f, maxlen=50)
                     log_content = ''.join(lines)
 
@@ -387,12 +387,12 @@ class LaunchService:
                         # Sanity check: port should be in valid range
                         if 1024 <= port <= 65535:
                             return port
-            except (IOError, ValueError):
+            except (OSError, ValueError):
                 pass
 
         return None
 
-    def _detect_port_from_env(self) -> Optional[int]:
+    def _detect_port_from_env(self) -> int | None:
         """Parse port from environment variables."""
         env = self.get_environment()
 
@@ -407,7 +407,7 @@ class LaunchService:
 
         return None
 
-    def _detect_port_from_args(self) -> Optional[int]:
+    def _detect_port_from_args(self) -> int | None:
         """Parse port from command line arguments."""
         program = self.get_program()
 
@@ -435,7 +435,7 @@ class LaunchService:
             return "Error generating XML"
 
     @classmethod
-    def create_from_form(cls, form_data: Dict[str, Any]) -> 'LaunchService':
+    def create_from_form(cls, form_data: dict[str, Any]) -> 'LaunchService':
         """Create a new LaunchService from form data."""
         name = form_data.get('name', '').strip()
         category = form_data.get('category', 'other').strip()
@@ -487,7 +487,7 @@ class LaunchService:
         return service
 
     @staticmethod
-    def _build_program_arguments(form_data: Dict[str, Any]) -> List[str]:
+    def _build_program_arguments(form_data: dict[str, Any]) -> list[str]:
         """Build the ProgramArguments array from form data."""
         script_path = form_data.get('script_path', '').strip()
 
@@ -504,7 +504,7 @@ class LaunchService:
         # Filter out redirection operators and their targets
         filtered_parts = []
         skip_next = False
-        for i, part in enumerate(parts):
+        for _i, part in enumerate(parts):
             if skip_next:
                 skip_next = False
                 continue
@@ -538,7 +538,7 @@ class LaunchService:
         return filtered_parts
 
     @staticmethod
-    def _parse_environment(env_string: str) -> Dict[str, str]:
+    def _parse_environment(env_string: str) -> dict[str, str]:
         """Parse environment variables from text input (KEY=VALUE format)."""
         env_vars = {}
         if not env_string:
@@ -553,7 +553,7 @@ class LaunchService:
         return env_vars
 
     @staticmethod
-    def _parse_schedule_intervals(form_data: Dict[str, Any]) -> List[Dict[str, int]]:
+    def _parse_schedule_intervals(form_data: dict[str, Any]) -> list[dict[str, int]]:
         """Parse schedule intervals from form data."""
         intervals = []
 
@@ -581,7 +581,7 @@ class LaunchService:
 
         return intervals
 
-    def update_from_form(self, form_data: Dict[str, Any]) -> None:
+    def update_from_form(self, form_data: dict[str, Any]) -> None:
         """Update this service from form data."""
         # Update program arguments
         self.data['ProgramArguments'] = self._build_program_arguments(form_data)

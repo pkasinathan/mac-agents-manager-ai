@@ -310,7 +310,7 @@ def read_log_file(log_path, tail=50):
         return ""
 
     try:
-        with open(resolved, 'r') as f:
+        with open(resolved) as f:
             last_lines = deque(f, maxlen=tail)
             return ''.join(last_lines)
     except Exception:

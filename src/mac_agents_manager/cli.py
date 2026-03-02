@@ -59,7 +59,7 @@ def cmd_list(args):
             continue
         print(f"\n  {stype.upper()}")
         print(f"  {'─' * 56}")
-        for ns, services in sorted(namespaces.items()):
+        for _ns, services in sorted(namespaces.items()):
             for svc in services:
                 status = LaunchCtlController.get_status(svc.label)
                 if status.get('running'):
@@ -124,7 +124,7 @@ def cmd_create(args):
         'environment': args.env or '',
     }
     if args.type == 'scheduled':
-        for i, (h, m) in enumerate(zip(args.hour, args.minute)):
+        for i, (h, m) in enumerate(zip(args.hour, args.minute, strict=False)):
             form_data[f'schedule_hour_{i}'] = str(h)
             form_data[f'schedule_minute_{i}'] = str(m)
 
@@ -249,7 +249,7 @@ def cmd_logs(args):
     if args.follow:
         os.execvp('tail', ['tail', '-f', resolved])
     else:
-        with open(resolved, 'r') as f:
+        with open(resolved) as f:
             lines = deque(f, maxlen=args.lines)
         sys.stdout.write(''.join(lines))
 
