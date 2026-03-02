@@ -57,6 +57,7 @@ start_server.log
 .pytest_cache/
 .ruff_cache/
 
-# Cursor
-.cursor/
+# Cursor / Agents — track skills and commands, ignore local settings
+.cursor/settings.local.json
+.agents/settings.local.json
 
