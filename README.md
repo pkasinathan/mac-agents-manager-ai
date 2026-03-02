@@ -46,19 +46,22 @@ mam
 ## Project Structure
 
 ```
+.github/                CI/CD workflows, issue/PR templates
+examples/               Sample LaunchAgent scripts and plists
+scripts/
+    start.sh            Start script used by the LaunchAgent plist
 src/mac_agents_manager/
-    __init__.py         Package version
-    app.py              Flask app and routes
-    cli.py              CLI entry point (mam command)
-    models.py           LaunchAgent parsing, serialization, and UI data
-    launchctl.py        Thin wrapper around launchctl commands
-    templates/          HTML templates
-    static/             CSS styles
+    __init__.py          Package version
+    app.py               Flask app and routes
+    cli.py               CLI entry point (mam command)
+    models.py            LaunchAgent parsing, serialization, and UI data
+    launchctl.py         Thin wrapper around launchctl commands
+    templates/           HTML templates
+    static/              CSS styles
+tests/                   Pytest test suite
+install.sh               Creates venv, installs package, loads LaunchAgent
+pyproject.toml           Package metadata for PyPI
 ```
-
-- `install.sh` -- Creates venv, installs package, installs/loads LaunchAgent
-- `start_mac_agents_manager.sh` -- Start script used by the LaunchAgent
-- `pyproject.toml` -- Package metadata for PyPI
 
 ## Common Commands
 

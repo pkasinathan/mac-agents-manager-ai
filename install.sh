@@ -48,7 +48,7 @@ fi
 deactivate
 
 # Make the start script executable
-chmod +x start_mac_agents_manager.sh
+chmod +x scripts/start.sh
 echo "✓ Start script is executable"
 
 # Check if LaunchAgent already exists
@@ -81,7 +81,7 @@ cat > "$LAUNCH_AGENT" <<PLIST
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>${SCRIPT_DIR}/start_mac_agents_manager.sh</string>
+        <string>${SCRIPT_DIR}/scripts/start.sh</string>
     </array>
     <key>WorkingDirectory</key>
     <string>${SCRIPT_DIR}</string>

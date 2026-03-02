@@ -10,7 +10,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>{{PROJECT_ROOT}}/scripts/stay_focus.sh</string>
+        <string>{{PROJECT_ROOT}}/examples/stay_focus.sh</string>
     </array>
     
     <!-- Working directory -->

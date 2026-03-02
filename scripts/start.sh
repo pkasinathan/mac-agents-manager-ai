@@ -1,7 +1,7 @@
 #!/bin/bash
 # Start script for Mac Agents Manager
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 # Activate virtual environment if it exists
 if [ -d "venv" ]; then
