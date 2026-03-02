@@ -25,8 +25,21 @@ def set_security_headers(response):
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['Referrer-Policy'] = 'no-referrer'
-    response.headers['Content-Security-Policy'] = "frame-ancestors 'none'"
+    port = os.environ.get('MAM_PORT', '8081')
+    csp = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'"
+    )
+    response.headers['Content-Security-Policy'] = csp
     response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
+    allowed_origins = {f'http://localhost:{port}', f'http://127.0.0.1:{port}'}
+    origin = request.headers.get('Origin', '')
+    if origin and origin not in allowed_origins:
+        response.headers['Access-Control-Allow-Origin'] = ''
     return response
 
 

@@ -261,6 +261,13 @@ def cmd_service_status(args):
 
 def cmd_serve(args):
     """Start the web server."""
+    if args.host not in ('127.0.0.1', 'localhost', '::1'):
+        print(
+            f"WARNING: Binding to {args.host} exposes the server to the network.\n"
+            "Mac Agents Manager has no authentication — any machine on the\n"
+            "network can control your LaunchAgents. Press Ctrl+C to abort.\n",
+            file=sys.stderr,
+        )
     os.environ['MAM_PORT'] = str(args.port)
     from mac_agents_manager.app import app
 

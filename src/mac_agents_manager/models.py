@@ -11,8 +11,13 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_LOG_DIRS = ('/tmp/', '/private/tmp/', '/var/log/', '/private/var/log/',
-                    '/var/folders/', '/private/var/folders/')
+_home = str(Path.home())
+ALLOWED_LOG_DIRS = (
+    '/tmp/', '/private/tmp/',
+    '/var/log/', '/private/var/log/',
+    '/var/folders/', '/private/var/folders/',
+    f'{_home}/.mac_agents_manager/logs/',
+)
 
 LABEL_RE = re.compile(r'^[a-zA-Z0-9._-]+$')
 MAX_LABEL_LEN = 128
