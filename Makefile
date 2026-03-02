@@ -1,4 +1,4 @@
-.PHONY: install dev lint test build publish clean start stop logs
+.PHONY: install dev lint format check test build publish clean start stop logs
 
 install:
 	pip install .
@@ -8,6 +8,11 @@ dev:
 
 lint:
 	ruff check src/
+
+format:
+	ruff format src/ tests/
+
+check: lint test
 
 test:
 	pytest tests/

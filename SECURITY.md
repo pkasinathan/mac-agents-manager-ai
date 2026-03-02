@@ -24,7 +24,7 @@ Key security properties:
 If you discover a security vulnerability, please report it responsibly:
 
 1. **Do not** open a public GitHub issue for security vulnerabilities.
-2. Email the maintainers privately with a description of the vulnerability, steps to reproduce, and any potential impact.
+2. Use [GitHub's private vulnerability reporting](https://github.com/pkasinathan/mac-agents-manager/security/advisories/new) to submit a description of the vulnerability, steps to reproduce, and any potential impact.
 3. Allow reasonable time for a fix before public disclosure.
 
 We appreciate responsible disclosure and will credit reporters in the release notes (unless they prefer to remain anonymous).

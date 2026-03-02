@@ -7,15 +7,13 @@ from collections import deque
 from pathlib import Path
 
 from mac_agents_manager import __version__
-
-ALLOWED_LOG_DIRS = ('/tmp/', '/private/tmp/', '/var/log/', '/private/var/log/',
-                    '/var/folders/', '/private/var/folders/')
+from mac_agents_manager.models import ALLOWED_LOG_DIRS
 
 
 def _get_services():
     """Import and return service/controller classes (lazy to keep CLI fast)."""
-    from mac_agents_manager.models import LaunchService
     from mac_agents_manager.launchctl import LaunchCtlController
+    from mac_agents_manager.models import LaunchService
     return LaunchService, LaunchCtlController
 
 
@@ -96,12 +94,12 @@ def cmd_show(args):
         print(f"  WorkDir:    {wd}")
     env = service.get_environment()
     if env:
-        print(f"  Env:")
+        print("  Env:")
         for k, v in env.items():
             print(f"    {k}={v}")
     times = service.get_schedule_times()
     if times:
-        print(f"  Schedule:")
+        print("  Schedule:")
         for t in times:
             print(f"    {t.get('Hour', 0):02d}:{t.get('Minute', 0):02d}")
     logs = service.get_log_paths()
@@ -109,7 +107,7 @@ def cmd_show(args):
         print(f"  Stdout:     {logs['stdout']}")
     if logs.get('stderr'):
         print(f"  Stderr:     {logs['stderr']}")
-    print(f"\n  ── Plist XML ──\n")
+    print("\n  ── Plist XML ──\n")
     print(service.get_plist_xml())
 
 
@@ -241,7 +239,7 @@ def cmd_logs(args):
 
     resolved = str(Path(log_path).resolve())
     if not any(resolved.startswith(d) for d in ALLOWED_LOG_DIRS):
-        print(f"Log path outside allowed directories", file=sys.stderr)
+        print("Log path outside allowed directories", file=sys.stderr)
         sys.exit(1)
 
     if not Path(resolved).exists():

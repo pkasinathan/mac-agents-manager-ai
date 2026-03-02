@@ -1,5 +1,10 @@
 # Mac Agents Manager
 
+[![CI](https://github.com/pkasinathan/mac-agents-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/pkasinathan/mac-agents-manager/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/mac-agents-manager-ai)](https://pypi.org/project/mac-agents-manager-ai/)
+[![Python](https://img.shields.io/pypi/pyversions/mac-agents-manager-ai)](https://pypi.org/project/mac-agents-manager-ai/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 A web UI for managing macOS LaunchAgents. Create, view, edit, start, stop, and reload user LaunchAgents from your browser.
 
 ## Install
@@ -16,7 +21,6 @@ Then open http://localhost:8081.
 ### Option B: Install as a LaunchAgent (auto-start on login)
 
 ```bash
-cd ~/workspace
 git clone https://github.com/pkasinathan/mac-agents-manager.git
 cd mac-agents-manager
 bash install.sh
@@ -83,6 +87,10 @@ make logs
 
 This tool binds to `127.0.0.1` only and is designed for single-user, localhost use. See [SECURITY.md](SECURITY.md) for the full security model and vulnerability reporting instructions.
 
+## Contributing
+
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a pull request. This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Development
 
 ```bash
@@ -93,6 +101,22 @@ source venv/bin/activate
 pip install -e ".[dev]"
 make lint
 make test
+```
+
+## Uninstall
+
+### If installed via pip
+
+```bash
+pip uninstall mac-agents-manager-ai
+```
+
+### If installed as a LaunchAgent
+
+```bash
+launchctl unload ~/Library/LaunchAgents/user.productivity.mac_agents_manager.plist
+rm ~/Library/LaunchAgents/user.productivity.mac_agents_manager.plist
+rm -rf /path/to/mac-agents-manager   # remove the cloned repo
 ```
 
 ## Notes

@@ -46,6 +46,17 @@ Thumbs.db
 start_server.log
 .playwright-mcp/
 
+# Keys and credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*
+
+# Caches
+.pytest_cache/
+.ruff_cache/
+
 # Cursor
 .cursor/
 
