@@ -17,18 +17,29 @@
 
 ### What is Mac Agents Manager?
 
-Mac Agents Manager is a web UI and CLI tool for managing macOS LaunchAgents. It lets you create, view, edit, start, stop, and reload user LaunchAgents from a browser dashboard or the `mam` command — without manually editing plist files or running raw `launchctl` commands.
+Mac Agents Manager is a web UI and CLI tool for managing macOS LaunchAgents. It lets you create, view, edit, start, stop, and reload user LaunchAgents from a browser dashboard or the `mam` command — without manually editing plist files or running raw `launchctl` commands. The dashboard includes an AI Chat mode powered by a local Ollama model for natural-language agent management.
 
 ### What are the prerequisites?
 
 - **macOS** (the tool uses macOS-specific `launchctl` APIs)
 - **Python 3.10+**
+- **Ollama** — local LLM runtime (required for AI Chat; optional for core features)
 
 Install Python 3.10+ via Homebrew if needed:
 
 ```bash
 brew install python@3.10
 ```
+
+Install Ollama and pull the model:
+
+```bash
+brew install ollama
+brew services start ollama   # runs as a background service, auto-starts at login
+ollama pull qwen3.5:4b       # text model for AI Chat
+```
+
+> **Note:** If you skip Ollama setup, everything except AI Chat works normally. MAM also attempts to auto-start Ollama and auto-pull the model on first chat use, but pre-installing is recommended.
 
 ### How do I install Mac Agents Manager?
 
@@ -123,14 +134,7 @@ The dashboard provides:
 - **Lifecycle control** — Start, stop, restart, load, and unload agents with one click
 - **Log viewer** — View stdout/stderr logs for any agent directly in the browser
 - **Edit agents** — Modify agent configuration and plist properties
-
-### Does the dashboard include AI chat?
-
-Yes. The right panel has an **AI Chat** mode for natural-language operations.
-
-- Mutating actions are **never auto-applied**; they require explicit Apply/Cancel confirmation.
-- Chat sessions are persisted and can be restored from the session selector.
-- Confirm messages are resolved against pending matching actions to avoid accidental re-execution.
+- **AI Chat** — Natural-language agent management (see [AI Chat](#ai-chat) section)
 
 ### Can I change the port?
 
@@ -150,6 +154,35 @@ mam serve --port 9090
 
 ## AI Chat
 
+### How does AI Chat work?
+
+The dashboard right panel has two tabs: **IDE** (the classic editor) and **AI Chat**. When you switch to AI Chat:
+
+1. MAM checks Ollama health and model availability
+2. If no service is selected, global prompts are suggested (statistics, summaries, etc.)
+3. If a service is selected in the sidebar, context-aware prompts are shown (start, stop, rename, change schedule, etc.)
+4. You can type free-form messages or click suggested prompts
+5. For any mutating action, the assistant proposes a change and waits for your explicit Apply/Cancel
+
+### What model does AI Chat use?
+
+Default: `qwen3.5:4b` (same text model used by [Chronometry](https://github.com/pkasinathan/chronometry-ai)). Override with:
+
+```bash
+MAM_OLLAMA_MODEL=llama3:8b mam
+```
+
+### Does MAM auto-start Ollama?
+
+Yes. When you open the AI Chat tab, MAM:
+
+1. Checks if Ollama is running
+2. If not, attempts to start it (`ollama serve` in background)
+3. Checks if the configured model is available
+4. If not, attempts to pull it (`ollama pull qwen3.5:4b`)
+
+This follows the same auto-lifecycle pattern as Chronometry. For the fastest experience, pre-install Ollama and pull the model.
+
 ### Why did chat say "No pending action was found to confirm"?
 
 This happens when there is no unresolved pending mutation in the current chat session.
@@ -164,11 +197,22 @@ Fix: ask for the change again and use Apply/Cancel on the new action preview.
 
 ### Why wasn't my change auto-applied after I asked for it?
 
-By design, mutating actions are confirmation-first. The assistant should present an action preview and wait for explicit Apply/Cancel before execution.
+By design, mutating actions are confirmation-first. The assistant presents an action preview and waits for explicit Apply/Cancel before execution.
 
 ### I clicked rename but nothing changed. Is that a bug?
 
 If the requested name/category resolves to the same label, rename is treated as a safe no-op and returns success without unloading/reloading or rewriting files.
+
+### Where are chat sessions stored?
+
+Chat sessions are persisted as JSON files in `~/.mac_agents_manager/chat/`. Each session file contains the message history and any pending actions. Sessions older than 30 days are automatically cleaned up.
+
+### Can I clear chat history?
+
+Yes:
+- In the dashboard, use the session picker to start a new session
+- Sessions can be cleared via the `POST /api/chat/clear` endpoint
+- To remove all history: `rm -rf ~/.mac_agents_manager/chat/`
 
 ---
 
@@ -269,6 +313,8 @@ This starts all keepalive agents that are loaded but not running, and loads any 
 | `MAM_PORT` | `8081` | Port the web server listens on |
 | `FLASK_DEBUG` | off | Set to `1` or `true` to enable Flask debug mode |
 | `MAM_LABEL_PREFIXES` | — | Comma-separated extra label prefixes to include (e.g. `com.myorg.,com.acme.`) |
+| `MAM_OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API base URL |
+| `MAM_OLLAMA_MODEL` | `qwen3.5:4b` | Model used for AI Chat |
 
 ### What label prefixes are shown by default?
 
@@ -306,12 +352,14 @@ Mac Agents Manager is designed for single-user, localhost-only use:
 - File paths are checked to stay within `~/Library/LaunchAgents/`
 - Log file reads are restricted to known safe directories (`/tmp/`, `/private/tmp/`, `/var/log/`, `/private/var/log/`, `/var/folders/`, `/private/var/folders/`)
 - Security headers (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Content-Security-Policy`) are set on all responses
+- AI Chat mutations require explicit user confirmation; unstructured claims are rewritten to safe retries
+- Ollama access is server-side only; browser code talks only to the Flask backend (`connect-src 'self'`)
 
 See [SECURITY.md](SECURITY.md) for the full security model and vulnerability reporting instructions.
 
 ### Does any data leave my machine?
 
-Core MAM operations run locally and do not call cloud APIs.  
+Core MAM operations run locally and do not call cloud APIs.
 If AI Chat is enabled and the configured Ollama model is not present, Ollama may download the model over the network on first use.
 
 ---

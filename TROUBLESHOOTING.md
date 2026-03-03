@@ -141,6 +141,82 @@ Ensure the `bin/` directory from the install location is on your `PATH`. On macO
 
 ---
 
+## Ollama not installed
+
+### Symptoms
+
+- AI Chat health indicator shows "disconnected" or "not ready"
+- Chat messages fail with connectivity errors
+
+### Cause
+
+Ollama is not installed on the system.
+
+### Fix
+
+Install Ollama via Homebrew:
+
+```bash
+brew install ollama
+```
+
+Start Ollama as a background service (auto-starts at login):
+
+```bash
+brew services start ollama
+```
+
+Pull the model used by AI Chat:
+
+```bash
+ollama pull qwen3.5:4b
+```
+
+Verify Ollama is running:
+
+```bash
+ollama list
+```
+
+> **Note:** MAM attempts to auto-start Ollama and auto-pull the model when the AI Chat tab is opened, but pre-installing is recommended for the best experience.
+
+---
+
+## Ollama running but AI Chat not responding
+
+### Symptoms
+
+- Ollama is installed and running (`ollama list` works)
+- AI Chat health indicator is still not ready
+
+### Cause
+
+The configured model may not be pulled, or the Ollama API URL is incorrect.
+
+### Fix
+
+1. Pull the model manually:
+
+```bash
+ollama pull qwen3.5:4b
+```
+
+2. If you use a custom Ollama URL, verify:
+
+```bash
+echo "$MAM_OLLAMA_BASE_URL"
+curl -s http://localhost:11434/api/tags | head
+```
+
+3. If you use a custom model, verify:
+
+```bash
+echo "$MAM_OLLAMA_MODEL"
+ollama list | grep "$MAM_OLLAMA_MODEL"
+```
+
+---
+
 ## AI Chat says "No pending action was found to confirm"
 
 ### Symptoms
@@ -157,60 +233,3 @@ There is no unresolved pending mutation in the current session. The prior action
 2. Wait for an action preview with Apply/Cancel.
 3. Click Apply (or confirm) on that fresh preview.
 4. Verify you are in the expected chat session from the session selector.
-
----
-
-## AI Chat not responding / Ollama unavailable
-
-### Symptoms
-
-- Chat health indicator is not ready
-- Messages fail with Ollama connectivity/model errors
-
-### Cause
-
-Ollama is not installed/running, or the configured model is not available locally.
-
-### Fix
-
-1. Ensure Ollama is installed:
-
-```bash
-brew install ollama
-```
-
-2. Start Ollama manually (optional; MAM also attempts auto-start):
-
-```bash
-ollama serve
-```
-
-3. Pull the model used by MAM (default: `qwen3.5:4b`):
-
-```bash
-ollama pull qwen3.5:4b
-```
-
-4. If you use custom settings, verify:
-
-```bash
-echo "$MAM_OLLAMA_MODEL"
-echo "$MAM_OLLAMA_BASE_URL"
-```
-
----
-
-## Rename appears to do nothing
-
-### Symptoms
-
-- Rename returns success, but label/file do not change.
-
-### Cause
-
-The requested rename resolves to the same final label (`user.<category>.<name>`). This is intentionally treated as a safe no-op.
-
-### Fix
-
-- Confirm the requested `new_name`/`new_category` differ from the current label.
-- Use `mam show <label>` or the dashboard details to verify current label before renaming.

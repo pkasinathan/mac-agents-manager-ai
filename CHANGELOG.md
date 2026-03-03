@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file.
 
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+
 ## [2.0.1] - 2026-03-02
 
 ### Fixed
@@ -9,6 +11,26 @@ All notable changes to this project will be documented in this file.
 - AI chat pending-action resolution now matches terminal statuses to the same action payload, preventing unrelated actions from being marked resolved.
 - AI chat confirmation flow now recognizes additional terminal status variants (`completed`, `failed`, `canceled`/`cancelled`) to avoid stale pending actions.
 - Rename action now validates normalized target labels before lifecycle operations and safely no-ops when renaming to the same label.
+
+## [2.0.0] - 2026-03-02
+
+### Added
+
+- **AI Chat Assistant** — Natural-language LaunchAgent management powered by local Ollama (`qwen3.5:4b`) with IDE/AI Chat tab switcher in the web dashboard
+- **Ollama auto-lifecycle** — Auto-start Ollama if not running, crash recovery, and automatic model pull on first use (same pattern as Chronometry)
+- **Confirmation-first mutations** — AI Chat proposes changes with Apply/Cancel; server-side confirmation resolves only unresolved matching pending actions
+- **Fallback safety** — Unstructured mutation claims from the model are rewritten to safe retry instructions
+- **Chat session persistence** — Sessions saved to `~/.mac_agents_manager/chat/` as JSON; restorable from session picker; 30-day auto-cleanup
+- **Context-aware suggestions** — Global prompts when no service selected; service-specific prompts (start, stop, rename, change schedule, etc.) when a service is selected
+- **Chat API endpoints** — `/api/chat/health`, `/api/chat/send`, `/api/chat/confirm`, `/api/chat/history`, `/api/chat/sessions`, `/api/chat/clear`
+- **New modules** — `ollama_chat.py` (engine, system prompt, action parsing) and `chat_history.py` (persistence, session management)
+- **Environment variables** — `MAM_OLLAMA_BASE_URL` and `MAM_OLLAMA_MODEL` for Ollama configuration
+- **Documentation** — `RELEASE.md` checklist, Ollama install instructions in README/QUICK_START/FAQ/TROUBLESHOOTING
+
+### Changed
+
+- Dashboard right panel now has IDE/AI Chat tab switcher; IDE tab is unchanged
+- `requests` added as a runtime dependency (for Ollama API communication)
 
 ## [1.2.2] - 2026-03-02
 

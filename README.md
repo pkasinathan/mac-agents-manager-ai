@@ -1,13 +1,20 @@
 # Mac Agents Manager
 
-**Web UI and CLI for managing macOS LaunchAgents.**
+**Web UI and CLI for managing macOS LaunchAgents, with AI Chat powered by Ollama.**
 
 [![CI](https://github.com/pkasinathan/mac-agents-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/pkasinathan/mac-agents-manager/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/mac-agents-manager-ai)](https://pypi.org/project/mac-agents-manager-ai/)
 [![Python](https://img.shields.io/pypi/pyversions/mac-agents-manager-ai)](https://pypi.org/project/mac-agents-manager-ai/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-Mac Agents Manager lets you create, view, edit, start, stop, and reload user LaunchAgents from a web dashboard or the `mam` CLI — no manual plist editing or raw `launchctl` commands required.
+Mac Agents Manager lets you create, view, edit, start, stop, and reload user LaunchAgents from a web dashboard or the `mam` CLI — no manual plist editing or raw `launchctl` commands required. The dashboard includes an AI Chat mode powered by a local Ollama model for natural-language agent management.
+
+## What's New (2.0.1)
+
+- **AI Chat Assistant** — Natural-language control of LaunchAgents with Apply/Cancel confirmation before mutations
+- **Session persistence** — Chat sessions saved to `~/.mac_agents_manager/chat/` and restorable from the session picker
+- **Ollama auto-lifecycle** — Auto-start, crash recovery, and model auto-pull (same pattern as [Chronometry](https://github.com/pkasinathan/chronometry-ai))
+- **Safety hardening** — Server-side confirmation resolves only unresolved matching pending actions; fallback rewrites unstructured mutation claims
 
 ## Features
 
@@ -20,24 +27,6 @@ Mac Agents Manager lets you create, view, edit, start, stop, and reload user Lau
 - **Auto-Start** — Install Mac Agents Manager itself as a LaunchAgent so the dashboard starts at login
 - **Localhost Only** — Binds to `127.0.0.1` for single-user, local-only access
 
-## AI Chat (Web Dashboard)
-
-The dashboard includes an **AI Chat** mode alongside the IDE editor.
-
-- **Confirmation-first mutations** — The assistant proposes changes and requires Apply/Cancel before execution.
-- **Safer confirmations** — Server-side confirmation only executes unresolved matching pending actions.
-- **Session restore** — Chat sessions persist and can be resumed from the session picker.
-- **Fallback safety** — If the model claims a mutation without structured action payload, the response is rewritten to a safe retry instruction.
-
-Chat API endpoints:
-
-- `POST /api/chat/send`
-- `POST /api/chat/confirm`
-- `GET /api/chat/history`
-- `GET /api/chat/sessions`
-- `POST /api/chat/clear`
-- `GET /api/chat/health`
-
 ## How It Works
 
 ```
@@ -48,7 +37,8 @@ Chat API endpoints:
 │   ├─ Browse all LaunchAgents           ├─ mam list             │
 │   ├─ Create / Edit agents              ├─ mam create           │
 │   ├─ Start / Stop / Restart            ├─ mam start <label>    │
-│   └─ View logs                         └─ mam logs <label>     │
+│   ├─ View logs                         ├─ mam logs <label>     │
+│   └─ AI Chat (Ollama)                  └─ mam open             │
 │           │                                    │               │
 │           └────────────┬───────────────────────┘               │
 │                        ▼                                       │
@@ -65,7 +55,6 @@ Chat API endpoints:
 │                                                                │
 │      Everything runs locally. Nothing leaves your machine.     │
 └────────────────────────────────────────────────────────────────┘
-
 ```
 
 ## Quick Start
@@ -77,6 +66,20 @@ Chat API endpoints:
   ```bash
   brew install python@3.10
   ```
+- **Ollama** — local LLM runtime (required for AI Chat)
+
+```bash
+# Install Ollama
+brew install ollama
+
+# Start Ollama as a background service (auto-starts at login)
+brew services start ollama
+
+# Pull the text model used by AI Chat
+ollama pull qwen3.5:4b
+```
+
+> **Note:** If you skip Ollama setup, everything except AI Chat works normally. The chat health indicator will show "disconnected" until Ollama is available. MAM also attempts to auto-start Ollama and auto-pull the model on first chat use, but pre-installing is recommended for the best experience.
 
 ### Install
 
@@ -122,6 +125,35 @@ mam list
 mam --version
 ```
 
+## AI Chat (Web Dashboard)
+
+The dashboard right panel has two tabs: **IDE** (the classic editor) and **AI Chat**.
+
+- **No service selected** — Global suggested prompts: "Summarize all services", "Service statistics", "List failed agents", etc.
+- **Service selected** — Context-aware prompts: "Change schedule", "Rename", "Start", "Stop", "View logs", and all other IDE-equivalent actions.
+- **Confirmation-first mutations** — The assistant proposes changes and requires Apply/Cancel before execution.
+- **Safer confirmations** — Server-side confirmation only executes unresolved matching pending actions.
+- **Session restore** — Chat sessions persist to `~/.mac_agents_manager/chat/` and can be resumed from the session picker.
+- **Fallback safety** — If the model claims a mutation without structured action payload, the response is rewritten to a safe retry instruction.
+
+### Ollama Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAM_OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API base URL |
+| `MAM_OLLAMA_MODEL` | `qwen3.5:4b` | Model used for AI Chat |
+
+Chat API endpoints:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/chat/health` | GET | Ollama + model readiness check |
+| `/api/chat/send` | POST | Send a message and get AI response |
+| `/api/chat/confirm` | POST | Apply or cancel a pending mutation |
+| `/api/chat/history` | GET | Retrieve chat history for a session |
+| `/api/chat/sessions` | GET | List available chat sessions |
+| `/api/chat/clear` | POST | Clear chat history for a session |
+
 ## CLI Reference
 
 ```
@@ -152,11 +184,25 @@ mam --version                    # Version info
 src/mac_agents_manager/
 ├── __init__.py       # Package version
 ├── cli.py            # Unified CLI (argparse)
-├── app.py            # Flask web dashboard and routes
+├── app.py            # Flask web dashboard and routes (IDE + Chat API)
 ├── models.py         # LaunchAgent parsing, serialization, and UI data
 ├── launchctl.py      # Thin wrapper around launchctl commands
+├── ollama_chat.py    # Ollama lifecycle, system prompt, action parsing, chat engine
+├── chat_history.py   # Chat session persistence (~/.mac_agents_manager/chat/)
 ├── templates/        # HTML templates (Jinja2)
 └── static/           # CSS styles
+```
+
+## Runtime Directory
+
+Chat sessions and AI state are stored in `~/.mac_agents_manager/`:
+
+```
+~/.mac_agents_manager/
+├── chat/                    # Chat session history (JSON files)
+│   ├── session_abc123.json  # Individual session with messages + pending actions
+│   └── ...
+└── venv/                    # Virtual environment (if installed per Quick Start)
 ```
 
 ## Environment Variables
@@ -166,10 +212,12 @@ src/mac_agents_manager/
 | `MAM_PORT` | `8081` | Port to listen on |
 | `FLASK_DEBUG` | off | Set to `1` or `true` to enable Flask debug mode |
 | `MAM_LABEL_PREFIXES` | — | Comma-separated extra label prefixes to include (e.g. `com.myorg.,com.acme.`) |
+| `MAM_OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API base URL |
+| `MAM_OLLAMA_MODEL` | `qwen3.5:4b` | Model used for AI Chat |
 
 ## Security
 
-This tool binds to `127.0.0.1` only and is designed for single-user, localhost use. See [SECURITY.md](SECURITY.md) for the full security model and vulnerability reporting instructions.
+This tool binds to `127.0.0.1` only and is designed for single-user, localhost use. AI Chat mutations require explicit user confirmation. See [SECURITY.md](SECURITY.md) for the full security model and vulnerability reporting instructions.
 
 ## Contributing
 
@@ -196,13 +244,24 @@ make test
 make check
 ```
 
+## Release Process
+
+Use the release checklist in [RELEASE.md](RELEASE.md) before publishing.
+
 ## Uninstall
 
 ```bash
 mam service uninstall
 pip3 uninstall mac-agents-manager-ai
+```
+
+To also remove all chat history and local data:
+
+```bash
 rm -rf ~/.mac_agents_manager
 ```
+
+> **Warning:** Deleting `~/.mac_agents_manager` permanently removes all chat sessions and local configuration. This cannot be undone.
 
 ## License
 
