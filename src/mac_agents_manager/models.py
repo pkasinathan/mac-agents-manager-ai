@@ -434,11 +434,34 @@ class LaunchService:
             logger.exception("Error generating plist XML for %s", self.label)
             return "Error generating XML"
 
+    @staticmethod
+    def _normalize_form_segment(value: Any) -> str:
+        """Normalize chat-derived name/category values to plain segment tokens."""
+        text = str(value or "").strip().strip("\"'`")
+        # Handle inputs like "2. productivity" or "name: echo_hello".
+        text = re.sub(r'^\s*\d+\.\s*', '', text)
+        text = re.sub(r'^[A-Za-z][A-Za-z\s_-]*[:=]\s*', '', text)
+        return text.strip().strip("\"'`")
+
     @classmethod
     def create_from_form(cls, form_data: dict[str, Any]) -> 'LaunchService':
         """Create a new LaunchService from form data."""
-        name = form_data.get('name', '').strip()
-        category = form_data.get('category', 'other').strip()
+        raw_name = form_data.get('name', '')
+        raw_category = form_data.get('category', 'other')
+        name = cls._normalize_form_segment(raw_name)
+        category = cls._normalize_form_segment(raw_category)
+
+        # Accept full labels from AI output and extract name/category segments.
+        normalized_name = name
+        if normalized_name.startswith('agent:user.'):
+            normalized_name = normalized_name.split('agent:', 1)[1]
+
+        if normalized_name.startswith('user.') and '.' in normalized_name:
+            label_parts = normalized_name.split('.')
+            if len(label_parts) >= 3:
+                if not category or category == 'other':
+                    category = label_parts[1]
+                name = label_parts[-1]
 
         name_re = re.compile(r'^[a-zA-Z0-9_-]+$')
         if not name or not name_re.match(name):

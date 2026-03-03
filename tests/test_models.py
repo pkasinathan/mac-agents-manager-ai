@@ -155,6 +155,24 @@ class TestCreateFromForm:
         with pytest.raises(ValueError, match="64 characters"):
             LaunchService.create_from_form(self._base_form(name="a" * 65))
 
+    def test_chat_style_name_and_category_are_normalized(self):
+        svc = LaunchService.create_from_form(
+            self._base_form(name="name: echo_hello", category="2. productivity")
+        )
+        assert svc.label == "user.productivity.echo_hello"
+
+    def test_full_label_in_name_is_accepted(self):
+        svc = LaunchService.create_from_form(
+            self._base_form(name="user.productivity.echo-hello-testing", category="")
+        )
+        assert svc.label == "user.productivity.echo-hello-testing"
+
+    def test_agent_prefixed_full_label_in_name_is_accepted(self):
+        svc = LaunchService.create_from_form(
+            self._base_form(name="agent:user.productivity.echo-hello-testing", category="")
+        )
+        assert svc.label == "user.productivity.echo-hello-testing"
+
     def test_log_paths_auto_generated(self):
         svc = LaunchService.create_from_form(self._base_form())
         assert svc.data["StandardOutPath"] == "/tmp/user.productivity.myapp.out"

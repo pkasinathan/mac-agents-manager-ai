@@ -10,6 +10,17 @@
 
 ---
 
+## Implementation Notes (Current)
+
+This PRD is the original design proposal. Current implementation includes these notable deltas/updates:
+
+- Added `GET /api/chat/sessions` for session restore UI.
+- Chat input is multiline (`textarea`) with Enter-to-send, Shift+Enter newline, and auto-resize behavior.
+- Added server-side confirm fallback in `POST /api/chat/send` to execute unresolved pending actions when the user sends explicit confirmation text.
+- Added safeguards to block model responses that claim mutation execution without a structured `action` payload.
+- Pending-action resolution now matches terminal statuses to the same action payload to avoid resolving unrelated actions.
+- Rename action normalizes/validates target label segments and safely no-ops when renaming to the same label.
+
 ## 1. Overview
 
 Add a conversational AI Chat interface to Mac Agents Manager (MAM), powered by Ollama `qwen3.5:4b`, that provides natural-language access to **every IDE capability**. The right panel gains two tabs — *IDE* (existing layout, untouched) and *AI Chat* (new). Chat context adapts dynamically based on whether a service is selected in the left sidebar tree.

@@ -4,6 +4,7 @@
 
 - [Getting Started](#getting-started)
 - [Web Dashboard](#web-dashboard)
+- [AI Chat](#ai-chat)
 - [CLI](#cli)
 - [LaunchAgents](#launchagents)
 - [Configuration](#configuration)
@@ -123,6 +124,14 @@ The dashboard provides:
 - **Log viewer** — View stdout/stderr logs for any agent directly in the browser
 - **Edit agents** — Modify agent configuration and plist properties
 
+### Does the dashboard include AI chat?
+
+Yes. The right panel has an **AI Chat** mode for natural-language operations.
+
+- Mutating actions are **never auto-applied**; they require explicit Apply/Cancel confirmation.
+- Chat sessions are persisted and can be restored from the session selector.
+- Confirm messages are resolved against pending matching actions to avoid accidental re-execution.
+
 ### Can I change the port?
 
 Yes. Set the `MAM_PORT` environment variable:
@@ -136,6 +145,30 @@ Or use the `--port` flag:
 ```bash
 mam serve --port 9090
 ```
+
+---
+
+## AI Chat
+
+### Why did chat say "No pending action was found to confirm"?
+
+This happens when there is no unresolved pending mutation in the current chat session.
+
+Common reasons:
+
+- The previous action was already completed or canceled
+- The assistant response did not include a structured action payload
+- You switched to a different/new chat session
+
+Fix: ask for the change again and use Apply/Cancel on the new action preview.
+
+### Why wasn't my change auto-applied after I asked for it?
+
+By design, mutating actions are confirmation-first. The assistant should present an action preview and wait for explicit Apply/Cancel before execution.
+
+### I clicked rename but nothing changed. Is that a bug?
+
+If the requested name/category resolves to the same label, rename is treated as a safe no-op and returns success without unloading/reloading or rewriting files.
 
 ---
 
@@ -271,14 +304,15 @@ Mac Agents Manager is designed for single-user, localhost-only use:
 - All state-changing endpoints require a CSRF token to prevent cross-origin attacks
 - Service labels are validated against a strict character allowlist
 - File paths are checked to stay within `~/Library/LaunchAgents/`
-- Log file reads are restricted to known safe directories (`/tmp/`, `/var/log/`, `/var/folders/`)
+- Log file reads are restricted to known safe directories (`/tmp/`, `/private/tmp/`, `/var/log/`, `/private/var/log/`, `/var/folders/`, `/private/var/folders/`)
 - Security headers (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Content-Security-Policy`) are set on all responses
 
 See [SECURITY.md](SECURITY.md) for the full security model and vulnerability reporting instructions.
 
 ### Does any data leave my machine?
 
-**No.** Mac Agents Manager runs entirely locally. There are no cloud APIs, no telemetry, and no external network calls.
+Core MAM operations run locally and do not call cloud APIs.  
+If AI Chat is enabled and the configured Ollama model is not present, Ollama may download the model over the network on first use.
 
 ---
 

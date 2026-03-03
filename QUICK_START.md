@@ -31,6 +31,11 @@ mam open
 
 Or visit **http://localhost:8081** in your browser.
 
+## 4. Use AI Chat (Optional)
+
+In the dashboard, switch to **AI Chat** mode to manage agents with natural language.
+Mutations require explicit **Apply/Cancel** confirmation before execution.
+
 ## Useful Commands
 
 ```bash

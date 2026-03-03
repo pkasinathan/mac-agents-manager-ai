@@ -40,12 +40,12 @@
             </div>
             <div class="editor-actions" id="ide-actions">
                 <a id="btn-port-link" class="btn btn-port" href="#" target="_blank" style="display: none;"></a>
-                <button type="button" class="btn btn-primary" onclick="saveServiceFromHeader()">Save</button>
+                <button type="button" class="btn btn-primary" onclick="saveServiceFromHeader()" id="btn-save-header">Save</button>
                 <button type="button" class="btn btn-secondary" onclick="controlAction('load')" id="btn-load-header">Load</button>
                 <button type="button" class="btn btn-secondary" onclick="controlAction('unload')" id="btn-unload-header">Unload</button>
                 <button type="button" class="btn btn-secondary" onclick="runOnce()" id="btn-runonce-header" style="display: none;">Run Once</button>
                 <button type="button" class="btn btn-secondary" onclick="reloadAgent()" id="btn-reload-header">Reload</button>
-                <button type="button" class="btn btn-danger" onclick="deleteService()">Delete</button>
+                <button type="button" class="btn btn-danger" onclick="deleteService()" id="btn-delete-header">Delete</button>
             </div>
         </div>
         
@@ -81,8 +81,16 @@
         <div id="chat-panel" class="chat-panel hidden">
             <!-- Ollama Status Bar -->
             <div class="chat-status-bar" id="chat-status-bar">
-                <span class="chat-status-dot" id="chat-status-dot"></span>
-                <span id="chat-status-text">Checking Ollama...</span>
+                <div class="chat-status-left">
+                    <span class="chat-status-dot" id="chat-status-dot"></span>
+                    <span id="chat-status-text">Checking Ollama...</span>
+                </div>
+                <div class="chat-session-controls">
+                    <select id="chat-session-select" onchange="onChatSessionSelected(this.value)">
+                        <option value="">Current session</option>
+                    </select>
+                    <button type="button" id="chat-new-session-btn" onclick="startNewChat()">+ New Chat</button>
+                </div>
             </div>
 
             <!-- Suggested Prompts -->
@@ -98,8 +106,7 @@
 
             <!-- Input -->
             <div class="chat-input-area">
-                <input type="text" id="chat-input" placeholder="Type a message..." autocomplete="off"
-                       onkeydown="if(event.key==='Enter') sendChatMessage()">
+                <textarea id="chat-input" placeholder="Type a message..." rows="1"></textarea>
                 <button id="chat-send" onclick="sendChatMessage()">Send</button>
             </div>
         </div>

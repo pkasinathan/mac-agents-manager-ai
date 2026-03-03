@@ -12,12 +12,31 @@ Mac Agents Manager lets you create, view, edit, start, stop, and reload user Lau
 ## Features
 
 - **Web Dashboard** — Modern browser UI to browse, create, edit, and control LaunchAgents on localhost
+- **AI Chat Assistant** — Natural-language control with explicit Apply/Cancel confirmation before mutations
 - **Unified CLI** — Single `mam` command for all operations (list, create, start, stop, logs, delete)
 - **LaunchAgent Lifecycle** — Load, unload, start, stop, restart, and delete agents with one command
 - **Agent Creation** — Create new keepalive or scheduled LaunchAgents from the CLI or web UI
 - **Log Viewer** — Tail stdout/stderr logs for any agent with follow mode
 - **Auto-Start** — Install Mac Agents Manager itself as a LaunchAgent so the dashboard starts at login
 - **Localhost Only** — Binds to `127.0.0.1` for single-user, local-only access
+
+## AI Chat (Web Dashboard)
+
+The dashboard includes an **AI Chat** mode alongside the IDE editor.
+
+- **Confirmation-first mutations** — The assistant proposes changes and requires Apply/Cancel before execution.
+- **Safer confirmations** — Server-side confirmation only executes unresolved matching pending actions.
+- **Session restore** — Chat sessions persist and can be resumed from the session picker.
+- **Fallback safety** — If the model claims a mutation without structured action payload, the response is rewritten to a safe retry instruction.
+
+Chat API endpoints:
+
+- `POST /api/chat/send`
+- `POST /api/chat/confirm`
+- `GET /api/chat/history`
+- `GET /api/chat/sessions`
+- `POST /api/chat/clear`
+- `GET /api/chat/health`
 
 ## How It Works
 

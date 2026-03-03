@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.1] - 2026-03-02
+
+### Fixed
+
+- AI chat pending-action resolution now matches terminal statuses to the same action payload, preventing unrelated actions from being marked resolved.
+- AI chat confirmation flow now recognizes additional terminal status variants (`completed`, `failed`, `canceled`/`cancelled`) to avoid stale pending actions.
+- Rename action now validates normalized target labels before lifecycle operations and safely no-ops when renaming to the same label.
+
 ## [1.2.2] - 2026-03-02
 
 ### Fixed

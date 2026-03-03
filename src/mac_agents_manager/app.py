@@ -2,6 +2,7 @@
 import hashlib
 import hmac
 import os
+import re
 from collections import deque
 from pathlib import Path
 
@@ -412,6 +413,117 @@ def _get_selected_service_data(service_id: str) -> dict | None:
         return None
 
 
+def _resolve_action_service_id(action_data: dict, params: dict) -> str:
+    """Resolve service_id from action payload variants."""
+    def _normalize(candidate: str) -> str:
+        candidate = str(candidate or "").strip().strip("\"'`")
+        if not candidate:
+            return ""
+        if ":" in candidate:
+            return candidate
+        return f"agent:{candidate}"
+
+    service_id = _normalize(action_data.get("service_id", ""))
+    if service_id:
+        return service_id
+
+    candidate = (
+        action_data.get("service")
+        or action_data.get("serviceId")
+        or action_data.get("label")
+        or action_data.get("service_label")
+        or params.get("service_id")
+        or params.get("service")
+        or params.get("serviceId")
+        or params.get("label")
+        or params.get("service_label")
+    )
+    return _normalize(candidate)
+
+
+def _is_confirmation_message(text: str) -> bool:
+    """Detect explicit user confirmation messages."""
+    normalized = re.sub(r'\s+', ' ', (text or '').strip().lower())
+    normalized = re.sub(r'[.!?]+$', '', normalized)
+    confirmations = {
+        "yes", "y", "ok", "okay", "confirm", "confirmed", "apply", "proceed", "do it",
+    }
+    if normalized in confirmations:
+        return True
+    # Accept variants like "confirme", "confirm now", "confirm it".
+    return normalized.startswith("confirm")
+
+
+def _find_pending_action(messages: list[dict]) -> dict | None:
+    """Return latest unresolved assistant action from chat history."""
+    def _is_terminal_action_status(content: str) -> bool:
+        text = str(content or "").strip().lower()
+        return (
+            text.startswith("action completed")
+            or text.startswith("action failed")
+            or "action cancelled" in text
+            or "action canceled" in text
+        )
+
+    for idx in range(len(messages) - 1, -1, -1):
+        msg = messages[idx]
+        if msg.get("role") != "assistant":
+            continue
+        action = msg.get("action")
+        if not isinstance(action, dict):
+            continue
+        own_content = str(msg.get("content", "")).strip().lower()
+        if _is_terminal_action_status(own_content):
+            continue
+
+        resolved = False
+        for later in messages[idx + 1:]:
+            if later.get("role") != "assistant":
+                continue
+            content = str(later.get("content", "")).strip().lower()
+            if _is_terminal_action_status(content):
+                later_action = later.get("action")
+                # Resolve only matching actions when payload is available.
+                if isinstance(later_action, dict):
+                    if later_action == action:
+                        resolved = True
+                        break
+                    continue
+                # Backward compatibility: terminal messages without action payload
+                # are treated as resolving the most recent prior action.
+                resolved = True
+                break
+        if not resolved:
+            return action
+    return None
+
+
+def _looks_like_mutation_request(text: str) -> bool:
+    """Best-effort detection for user requests that should produce an action."""
+    normalized = re.sub(r'\s+', ' ', (text or '').strip().lower())
+    mutation_terms = (
+        "start", "stop", "restart", "reload", "load", "unload", "delete", "remove",
+        "create", "rename", "update", "change", "set", "run once", "run now",
+        "script should", "schedule", "convert",
+    )
+    return any(term in normalized for term in mutation_terms)
+
+
+def _response_claims_execution_without_action(text: str) -> bool:
+    """Detect assistant text that claims execution while no action payload exists."""
+    normalized = re.sub(r'\s+', ' ', (text or '').strip().lower())
+    suspicious_prefixes = (
+        "action completed", "action failed", "action in progress", "action:",
+    )
+    if normalized.startswith(suspicious_prefixes):
+        return True
+    suspicious_phrases = (
+        "updated script", "created and loaded", "started ", "stopped ",
+        "restarted ", "executed once", "running ", "deleted ",
+    )
+    return any(p in normalized for p in suspicious_phrases)
+
+
 def _execute_chat_action(action_data: dict) -> dict:
     """Execute a confirmed chat action by calling existing MAM backend functions.
 
@@ -419,26 +531,45 @@ def _execute_chat_action(action_data: dict) -> dict:
         {"success": bool, "message": str}
     """
     action_type = action_data.get("action", "")
-    service_id = action_data.get("service_id", "")
-    params = action_data.get("params", {})
+    params = action_data.get("params")
+    if not isinstance(params, dict):
+        params = {}
+
+    # Some LLM outputs place create/update fields at top-level instead of params.
+    if not params:
+        params = {
+            k: v for k, v in action_data.items()
+            if k not in {"action", "service_id", "params"}
+        }
+    service_id = _resolve_action_service_id(action_data, params)
 
     try:
         if action_type in ("start", "stop", "restart", "load", "unload"):
+            if not service_id:
+                return {"success": False, "message": "Missing service_id for control action"}
             return _execute_control_action(action_type, service_id)
 
         if action_type == "delete":
+            if not service_id:
+                return {"success": False, "message": "Missing service_id for delete action"}
             return _execute_delete_action(service_id)
 
         if action_type == "create":
             return _execute_create_action(params)
 
         if action_type in ("update_schedule", "update_script", "update_working_dir", "update_environment"):
+            if not service_id:
+                return {"success": False, "message": "Missing service_id for update action"}
             return _execute_update_action(action_type, service_id, params)
 
         if action_type == "rename":
+            if not service_id:
+                return {"success": False, "message": "Missing service_id for rename action"}
             return _execute_rename_action(service_id, params)
 
         if action_type == "convert_schedule_type":
+            if not service_id:
+                return {"success": False, "message": "Missing service_id for convert action"}
             return _execute_convert_action(service_id, params)
 
         if action_type == "start_all_keepalive":
@@ -486,9 +617,57 @@ def _execute_delete_action(service_id: str) -> dict:
     return {"success": False, "message": "Failed to delete service"}
 
 
+def _normalize_create_params(params: dict) -> dict:
+    """Accept common AI aliases and normalize into create_from_form fields."""
+    normalized = dict(params or {})
+
+    if not normalized.get("name"):
+        normalized["name"] = (
+            normalized.get("service_name")
+            or normalized.get("new_name")
+            or normalized.get("agent_name")
+            or normalized.get("label")
+            or ""
+        )
+
+    if not normalized.get("category"):
+        normalized["category"] = (
+            normalized.get("namespace")
+            or normalized.get("new_category")
+            or normalized.get("service_category")
+            or "other"
+        )
+
+    if not normalized.get("script_path"):
+        normalized["script_path"] = (
+            normalized.get("script")
+            or normalized.get("command")
+            or normalized.get("program")
+            or ""
+        )
+
+    if not normalized.get("schedule_type"):
+        normalized["schedule_type"] = normalized.get("type") or "keepalive"
+
+    # If only a full label was provided, derive category + short name.
+    label = str(normalized.get("label", "")).strip().strip("\"'`")
+    if label.startswith("agent:user."):
+        label = label.split("agent:", 1)[1]
+    if label.startswith("user.") and "." in label:
+        parts = label.split(".")
+        if len(parts) >= 3:
+            if not normalized.get("category") or normalized.get("category") == "other":
+                normalized["category"] = parts[1]
+            if not normalized.get("name") or normalized.get("name") == label:
+                normalized["name"] = parts[-1]
+
+    return normalized
+
+
 def _execute_create_action(params: dict) -> dict:
     """Create a new service."""
-    service = LaunchService.create_from_form(params)
+    form_data = _normalize_create_params(params)
+    service = LaunchService.create_from_form(form_data)
     if service.save():
         LaunchCtlController.load(service.label, str(service.file_path))
         return {"success": True, "message": f"Created and loaded {service.label}", "service_id": service.service_id}
@@ -582,12 +761,24 @@ def _execute_rename_action(service_id: str, params: dict) -> dict:
     if old_service is None:
         return {"success": False, "message": "Failed to load service plist"}
 
-    new_name = params.get("new_name", "")
-    new_category = params.get("new_category", old_service.namespace)
+    raw_new_name = params.get("new_name", "")
+    raw_new_category = params.get("new_category", old_service.namespace)
+    new_name = LaunchService._normalize_form_segment(raw_new_name)
+    new_category = LaunchService._normalize_form_segment(raw_new_category)
     if not new_name:
         return {"success": False, "message": "new_name is required"}
 
     new_label = f"user.{new_category}.{new_name}"
+    try:
+        LaunchService._validate_label(new_label)
+    except ValueError as exc:
+        return {"success": False, "message": f"Invalid rename target: {exc}"}
+    if new_label == old_service.label:
+        return {
+            "success": True,
+            "message": f"No changes needed: service already named {new_label}",
+            "service_id": old_service.service_id,
+        }
 
     # Unload old
     LaunchCtlController.unload(old_service.label, str(old_service.file_path))
@@ -689,6 +880,32 @@ def api_chat_send():
     # Save user message
     history.append_message(session_id, 'user', user_message, service_id=service_id or None)
 
+    # Server-side confirm: execute pending action even if model misses JSON action output.
+    if _is_confirmation_message(user_message):
+        messages = history.get_messages(session_id)
+        pending_action = _find_pending_action(messages)
+        if pending_action:
+            result = _execute_chat_action(pending_action)
+            response_text = (
+                f"Action completed: {result['message']}"
+                if result.get("success")
+                else f"Action failed: {result['message']}"
+            )
+            history.append_message(
+                session_id,
+                'assistant',
+                response_text,
+                action=pending_action,
+                service_id=service_id or None,
+            )
+            return jsonify({
+                'response': response_text,
+                'action': pending_action,
+                'requires_confirmation': False,
+                'session_id': session_id,
+                'error': None,
+            })
+
     # Get conversation context
     conversation = history.get_conversation_history(session_id, max_messages=engine.max_context)
     # Remove the last user message since send_message adds it
@@ -701,6 +918,14 @@ def api_chat_send():
 
     # Call Ollama
     result = engine.send_message(user_message, conversation, services_summary, selected_service)
+
+    # Prevent false execution claims when no structured action exists.
+    if not result.get('action'):
+        response_text = str(result.get('response', '')).strip()
+        if _is_confirmation_message(user_message) and _response_claims_execution_without_action(response_text):
+            result['response'] = "No pending action was found to confirm. Please request the change again, then click Apply (or confirm once prompted)."
+        elif _looks_like_mutation_request(user_message) and _response_claims_execution_without_action(response_text):
+            result['response'] = "I couldn't execute that yet because no structured action was produced. Please retry the request; I will ask for confirmation with Apply/Cancel before any change."
 
     # Save assistant response
     history.append_message(
@@ -764,6 +989,14 @@ def api_chat_history():
         'session_id': session_id,
         'messages': messages,
     })
+
+
+@app.route('/api/chat/sessions')
+def api_chat_sessions():
+    """List recent chat sessions for restore UI."""
+    history = _get_chat_history()
+    sessions = history.list_sessions()
+    return jsonify({'sessions': sessions})
 
 
 @app.route('/api/chat/clear', methods=['POST'])

@@ -54,11 +54,18 @@
         let servicesTree = null;
         let timeSlotCount = 1;
         let currentMode = 'ide';  // 'ide' or 'chat'
+        let startupRestored = false;
 
         // Chat state
         let chatSessionId = localStorage.getItem('mam-chat-session') || '';
         let chatOllamaReady = false;
         let chatPendingAction = null;  // Holds the action awaiting confirmation
+        const CHAT_WELCOME_HTML = `
+            <div class="chat-message assistant">
+                <span class="chat-avatar">🤖</span>
+                <div class="chat-bubble">Welcome! I can help manage your LaunchAgents. Select a service from the sidebar, or ask me anything.</div>
+            </div>
+        `;
 
         function getCSRFToken() {
             const meta = document.querySelector('meta[name="csrf-token"]');
@@ -76,15 +83,44 @@
         }
 
         // Initialize on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            loadServicesTree();
+        document.addEventListener('DOMContentLoaded', async function() {
+            await loadServicesTree();
+            await restoreUiState();
+            updateIdeActionsVisibility();
+            initChatInput();
         });
+
+        async function restoreUiState() {
+            if (startupRestored) return;
+            startupRestored = true;
+
+            // Restore selected service if it still exists
+            const savedServiceId = localStorage.getItem('mam-selected-service') || '';
+            if (savedServiceId) {
+                try {
+                    await loadService(savedServiceId);
+                } catch (_) {
+                    localStorage.removeItem('mam-selected-service');
+                }
+            }
+
+            // Restore last mode
+            const savedMode = localStorage.getItem('mam-ui-mode');
+            if (savedMode === 'chat' || savedMode === 'ide') {
+                switchMode(savedMode);
+            }
+
+            // Restore the active chat session (or latest persisted session)
+            await restoreChatSession();
+            await refreshChatSessionList(chatSessionId);
+        }
 
         // ===================================================================
         // Mode switching (IDE / AI Chat)
         // ===================================================================
         function switchMode(mode) {
             currentMode = mode;
+            localStorage.setItem('mam-ui-mode', mode);
 
             // Update tab buttons
             document.querySelectorAll('.mode-tab').forEach(tab => {
@@ -101,20 +137,61 @@
                 editorTop.classList.remove('hidden');
                 editorBottom.classList.remove('hidden');
                 chatPanel.classList.add('hidden');
-                ideActions.style.display = 'flex';
+                // Refresh IDE panels from latest loaded service state.
+                if (currentServiceData) {
+                    renderEditor();
+                    populateForm();
+                    updatePlistPreview();
+                    updateLogs();
+                }
             } else {
                 editorTop.classList.add('hidden');
                 editorBottom.classList.add('hidden');
                 chatPanel.classList.remove('hidden');
-                ideActions.style.display = 'none';
 
                 // Initialize chat if first time
                 if (!chatOllamaReady) {
                     checkOllamaHealth();
                 }
                 updateChatSuggestions();
+                refreshChatSessionList(chatSessionId);
                 scrollChatToBottom();
             }
+            updateIdeActionsVisibility();
+        }
+
+        function updateIdeActionsVisibility() {
+            const ideActions = document.getElementById('ide-actions');
+            const btnSave = document.getElementById('btn-save-header');
+            const btnLoad = document.getElementById('btn-load-header');
+            const btnUnload = document.getElementById('btn-unload-header');
+            const btnReload = document.getElementById('btn-reload-header');
+            const btnDelete = document.getElementById('btn-delete-header');
+            const btnRunOnce = document.getElementById('btn-runonce-header');
+            const btnPort = document.getElementById('btn-port-link');
+
+            if (!ideActions) return;
+
+            // Hide all IDE actions in chat mode.
+            if (currentMode !== 'ide') {
+                ideActions.style.display = 'none';
+                return;
+            }
+
+            const hasExistingService = Boolean(currentServiceId && currentServiceId !== 'new');
+            const isCreatingNew = currentServiceId === 'new';
+            const showActions = hasExistingService || isCreatingNew;
+
+            ideActions.style.display = showActions ? 'flex' : 'none';
+            if (!showActions) return;
+
+            if (btnSave) btnSave.style.display = 'inline-block';
+            if (btnLoad) btnLoad.style.display = hasExistingService ? 'inline-block' : 'none';
+            if (btnUnload) btnUnload.style.display = hasExistingService ? 'inline-block' : 'none';
+            if (btnReload) btnReload.style.display = hasExistingService ? 'inline-block' : 'none';
+            if (btnDelete) btnDelete.style.display = hasExistingService ? 'inline-block' : 'none';
+            if (btnRunOnce) btnRunOnce.style.display = hasExistingService ? btnRunOnce.style.display : 'none';
+            if (btnPort && !hasExistingService) btnPort.style.display = 'none';
         }
 
         // ===================================================================
@@ -209,6 +286,7 @@
             if (!message) return;
 
             input.value = '';
+            autoResizeChatInput(input);
             input.disabled = true;
             document.getElementById('chat-send').disabled = true;
 
@@ -238,6 +316,7 @@
                 if (data.session_id) {
                     chatSessionId = data.session_id;
                     localStorage.setItem('mam-chat-session', chatSessionId);
+                    refreshChatSessionList(chatSessionId);
                 }
 
                 // Remove loading
@@ -273,6 +352,148 @@
             input.disabled = false;
             document.getElementById('chat-send').disabled = false;
             input.focus();
+        }
+
+        function initChatInput() {
+            const input = document.getElementById('chat-input');
+            if (!input) return;
+            input.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter') return;
+                // Cmd/Ctrl+Enter should insert newline, not send.
+                if (event.metaKey || event.ctrlKey) {
+                    return;
+                }
+                // Shift+Enter inserts newline.
+                if (event.shiftKey) {
+                    return;
+                }
+                event.preventDefault();
+                sendChatMessage();
+            });
+            input.addEventListener('input', () => autoResizeChatInput(input));
+            autoResizeChatInput(input);
+        }
+
+        function autoResizeChatInput(input) {
+            if (!input) return;
+            input.style.height = 'auto';
+            const maxHeight = 140;
+            input.style.height = `${Math.min(input.scrollHeight, maxHeight)}px`;
+        }
+
+        function resetChatMessages() {
+            const container = document.getElementById('chat-messages');
+            if (container) container.innerHTML = CHAT_WELCOME_HTML;
+        }
+
+        async function refreshChatSessionList(selectedSessionId = '') {
+            const select = document.getElementById('chat-session-select');
+            if (!select) return;
+
+            const selected = selectedSessionId || chatSessionId || '';
+            const previous = select.value;
+            const preferred = selected || previous || '';
+
+            select.innerHTML = '<option value="">Current session</option>';
+            try {
+                const sessionsResp = await fetch('/api/chat/sessions');
+                if (!sessionsResp.ok) return;
+                const sessionsData = await sessionsResp.json();
+                const sessions = Array.isArray(sessionsData.sessions) ? sessionsData.sessions : [];
+                sessions.forEach(session => {
+                    const option = document.createElement('option');
+                    option.value = session.session_id || '';
+                    const count = Number(session.message_count || 0);
+                    option.textContent = `${session.session_id || 'unknown'} (${count})`;
+                    select.appendChild(option);
+                });
+            } catch (_) {
+                return;
+            }
+
+            if (preferred) {
+                select.value = preferred;
+            }
+        }
+
+        async function startNewChat() {
+            chatPendingAction = null;
+            chatSessionId = '';
+            localStorage.removeItem('mam-chat-session');
+            resetChatMessages();
+            await refreshChatSessionList('');
+        }
+
+        async function onChatSessionSelected(sessionId) {
+            if (!sessionId) {
+                await startNewChat();
+                return;
+            }
+            await restoreChatSession(sessionId, { fallbackToLatest: false });
+        }
+
+        async function restoreChatSession(sessionIdOverride = '', options = {}) {
+            const container = document.getElementById('chat-messages');
+            if (!container) return;
+            const fallbackToLatest = options.fallbackToLatest !== false;
+
+            let sessionToLoad = sessionIdOverride || chatSessionId;
+            if (!sessionToLoad && fallbackToLatest) {
+                try {
+                    const sessionsResp = await fetch('/api/chat/sessions');
+                    if (sessionsResp.ok) {
+                        const sessionsData = await sessionsResp.json();
+                        const sessions = Array.isArray(sessionsData.sessions) ? sessionsData.sessions : [];
+                        const latest = sessions.find(s => (s.message_count || 0) > 0) || sessions[0];
+                        if (latest && latest.session_id) {
+                            sessionToLoad = latest.session_id;
+                        }
+                    }
+                } catch (_) {
+                    return;
+                }
+            }
+
+            if (!sessionToLoad) {
+                resetChatMessages();
+                await refreshChatSessionList('');
+                return;
+            }
+
+            try {
+                const historyResp = await fetch(`/api/chat/history?session_id=${encodeURIComponent(sessionToLoad)}`);
+                if (!historyResp.ok) {
+                    if (sessionIdOverride) {
+                        await startNewChat();
+                    }
+                    return;
+                }
+
+                const historyData = await historyResp.json();
+                const messages = Array.isArray(historyData.messages) ? historyData.messages : [];
+                if (messages.length === 0) {
+                    resetChatMessages();
+                    chatSessionId = sessionToLoad;
+                    localStorage.setItem('mam-chat-session', chatSessionId);
+                    await refreshChatSessionList(chatSessionId);
+                    return;
+                }
+
+                // Replace the welcome message with restored history.
+                container.innerHTML = '';
+                chatPendingAction = null;
+                for (const m of messages) {
+                    const role = m.role === 'user' ? 'user' : 'assistant';
+                    // Restored messages are read-only; do not revive old pending actions.
+                    appendChatMessage(role, m.content || '', null);
+                }
+
+                chatSessionId = sessionToLoad;
+                localStorage.setItem('mam-chat-session', chatSessionId);
+                await refreshChatSessionList(chatSessionId);
+            } catch (err) {
+                console.error('Error restoring chat session:', err);
+            }
         }
 
         function appendChatMessage(role, content, action, isError) {
@@ -384,7 +605,7 @@
                             currentServiceId = result.service_id;
                         }
                         if (action.action !== 'delete') {
-                            try { await loadService(currentServiceId); } catch (_) {}
+                            try { await loadService(currentServiceId, { silentInChat: true }); } catch (_) {}
                         } else {
                             currentServiceId = null;
                             currentServiceData = null;
@@ -513,11 +734,14 @@
         }
 
         // Load service details
-        async function loadService(serviceId) {
+        async function loadService(serviceId, options = {}) {
+            const silentInChat = Boolean(options.silentInChat);
             try {
                 const response = await fetch(`/api/service/${serviceId}`);
                 currentServiceData = await response.json();
                 currentServiceId = serviceId;
+                localStorage.setItem('mam-selected-service', serviceId);
+                updateIdeActionsVisibility();
                 
                 // Update selected state in tree
                 document.querySelectorAll('.service-item').forEach(el => {
@@ -542,8 +766,10 @@
                     // Update chat suggestions for the selected service
                     updateChatSuggestions();
                     // Notify in chat
-                    const label = currentServiceData.label || serviceId;
-                    appendChatMessage('assistant', `Now viewing: <strong>${escapeHtml(label)}</strong>. I can help with this service — check the suggested actions above.`);
+                    if (!silentInChat) {
+                        const label = currentServiceData.label || serviceId;
+                        appendChatMessage('assistant', `Now viewing: <strong>${escapeHtml(label)}</strong>. I can help with this service — check the suggested actions above.`);
+                    }
                 }
             } catch (error) {
                 console.error('Error loading service:', error);
@@ -610,6 +836,7 @@
             if (loadBtn) {
                 loadBtn.style.display = isSelf ? 'none' : 'inline-block';
             }
+            updateIdeActionsVisibility();
         }
 
         // Populate form with agent data
@@ -754,6 +981,7 @@
         // Create new agent
         async function createNewService(scheduleType) {
             currentServiceId = 'new';
+            localStorage.removeItem('mam-selected-service');
             
             // Switch to IDE mode for creation
             switchMode('ide');
@@ -792,6 +1020,7 @@
             
             renderEditor();
             populateForm();
+            updateIdeActionsVisibility();
             
             // Add event listeners for auto-generating label
             const nameField = document.getElementById('service_name');
@@ -1013,6 +1242,8 @@
                     
                     currentServiceId = null;
                     currentServiceData = null;
+                    localStorage.removeItem('mam-selected-service');
+                    updateIdeActionsVisibility();
                     
                     // Update chat suggestions if in chat mode
                     if (currentMode === 'chat') {

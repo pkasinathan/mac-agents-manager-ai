@@ -138,3 +138,79 @@ python3 -m pip show mac-agents-manager-ai
 ```
 
 Ensure the `bin/` directory from the install location is on your `PATH`. On macOS with Homebrew Python, this is typically `~/Library/Python/3.x/bin/` or `/opt/homebrew/bin/`.
+
+---
+
+## AI Chat says "No pending action was found to confirm"
+
+### Symptoms
+
+- You type `confirm`/`yes` and chat responds with: "No pending action was found to confirm..."
+
+### Cause
+
+There is no unresolved pending mutation in the current session. The prior action may already be completed/canceled, or the model response did not include a structured action payload.
+
+### Fix
+
+1. Re-issue the desired mutation request.
+2. Wait for an action preview with Apply/Cancel.
+3. Click Apply (or confirm) on that fresh preview.
+4. Verify you are in the expected chat session from the session selector.
+
+---
+
+## AI Chat not responding / Ollama unavailable
+
+### Symptoms
+
+- Chat health indicator is not ready
+- Messages fail with Ollama connectivity/model errors
+
+### Cause
+
+Ollama is not installed/running, or the configured model is not available locally.
+
+### Fix
+
+1. Ensure Ollama is installed:
+
+```bash
+brew install ollama
+```
+
+2. Start Ollama manually (optional; MAM also attempts auto-start):
+
+```bash
+ollama serve
+```
+
+3. Pull the model used by MAM (default: `qwen3.5:4b`):
+
+```bash
+ollama pull qwen3.5:4b
+```
+
+4. If you use custom settings, verify:
+
+```bash
+echo "$MAM_OLLAMA_MODEL"
+echo "$MAM_OLLAMA_BASE_URL"
+```
+
+---
+
+## Rename appears to do nothing
+
+### Symptoms
+
+- Rename returns success, but label/file do not change.
+
+### Cause
+
+The requested rename resolves to the same final label (`user.<category>.<name>`). This is intentionally treated as a safe no-op.
+
+### Fix
+
+- Confirm the requested `new_name`/`new_category` differ from the current label.
+- Use `mam show <label>` or the dashboard details to verify current label before renaming.
