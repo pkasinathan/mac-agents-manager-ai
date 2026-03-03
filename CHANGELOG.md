@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2.0.2] - 2026-03-02
+
+### Improved
+
+- Ollama installation instructions added to README Quick Start, QUICK_START.md, FAQ, and TROUBLESHOOTING.md
+- All documentation aligned with Chronometry project patterns (style, structure, themes)
+- Added RELEASE.md checklist (mirrors Chronometry release workflow)
+- CONTRIBUTING.md expanded with coding standards, commit message conventions, and PR guidelines
+- CHANGELOG entries for 2.0.0 and 2.0.1 backfilled
+
 ## [2.0.1] - 2026-03-02
 
 ### Fixed
