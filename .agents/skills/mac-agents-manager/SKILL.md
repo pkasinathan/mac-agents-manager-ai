@@ -1,5 +1,5 @@
 ---
-name: mac-agents-manager
+name: mac-agents-manager-ai
 description: >
   Expert guide for the Mac Agents Manager project and its `mam` CLI — managing
   macOS LaunchAgents (create, load, start, stop, restart, delete, view logs,

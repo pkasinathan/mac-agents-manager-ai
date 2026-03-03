@@ -41,11 +41,11 @@ dev = [
 mam = "mac_agents_manager.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/pkasinathan/mac-agents-manager"
-Documentation = "https://github.com/pkasinathan/mac-agents-manager#readme"
-Repository = "https://github.com/pkasinathan/mac-agents-manager"
-Issues = "https://github.com/pkasinathan/mac-agents-manager/issues"
-Changelog = "https://github.com/pkasinathan/mac-agents-manager/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/pkasinathan/mac-agents-manager-ai"
+Documentation = "https://github.com/pkasinathan/mac-agents-manager-ai#readme"
+Repository = "https://github.com/pkasinathan/mac-agents-manager-ai"
+Issues = "https://github.com/pkasinathan/mac-agents-manager-ai/issues"
+Changelog = "https://github.com/pkasinathan/mac-agents-manager-ai/blob/main/CHANGELOG.md"
 
 # ── Setuptools ────────────────────────────────────────────────────────────────
 

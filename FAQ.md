@@ -369,8 +369,8 @@ If AI Chat is enabled and the configured Ollama model is not present, Ollama may
 ### How do I set up a development environment?
 
 ```bash
-git clone https://github.com/pkasinathan/mac-agents-manager.git
-cd mac-agents-manager
+git clone https://github.com/pkasinathan/mac-agents-manager-ai.git
+cd mac-agents-manager-ai
 make dev    # Creates venv, installs runtime + dev dependencies
 source venv/bin/activate
 ```

@@ -33,7 +33,7 @@ Examples of unacceptable behavior:
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported by [opening a GitHub issue](https://github.com/pkasinathan/mac-agents-manager/issues/new)
+reported by [opening a GitHub issue](https://github.com/pkasinathan/mac-agents-manager-ai/issues/new)
 or by contacting the project maintainers directly via the email listed in their GitHub profiles.
 
 Project maintainers are responsible for clarifying and enforcing standards of

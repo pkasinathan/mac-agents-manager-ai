@@ -2,7 +2,7 @@
 
 **Web UI and CLI for managing macOS LaunchAgents, with AI Chat powered by Ollama.**
 
-[![CI](https://github.com/pkasinathan/mac-agents-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/pkasinathan/mac-agents-manager/actions/workflows/ci.yml)
+[![CI](https://github.com/pkasinathan/mac-agents-manager-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/pkasinathan/mac-agents-manager-ai/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/mac-agents-manager-ai)](https://pypi.org/project/mac-agents-manager-ai/)
 [![Python](https://img.shields.io/pypi/pyversions/mac-agents-manager-ai)](https://pypi.org/project/mac-agents-manager-ai/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -227,8 +227,8 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) before
 
 ```bash
 # Clone and install in dev mode
-git clone https://github.com/pkasinathan/mac-agents-manager.git
-cd mac-agents-manager
+git clone https://github.com/pkasinathan/mac-agents-manager-ai.git
+cd mac-agents-manager-ai
 make dev
 
 # Run linter

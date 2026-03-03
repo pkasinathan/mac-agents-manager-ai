@@ -10,7 +10,7 @@ By participating in this project, you agree to abide by our [Code of Conduct](CO
 
 ### Reporting Bugs
 
-1. Check [existing issues](https://github.com/pkasinathan/mac-agents-manager/issues) to avoid duplicates.
+1. Check [existing issues](https://github.com/pkasinathan/mac-agents-manager-ai/issues) to avoid duplicates.
 2. Use the **Bug Report** issue template.
 3. Include your macOS version, Python version, and Ollama version (if using AI Chat).
 4. Include relevant log output (`/tmp/mac_agents_manager.out`, `/tmp/mac_agents_manager.err`).
@@ -32,8 +32,8 @@ By participating in this project, you agree to abide by our [Code of Conduct](CO
 ## Development Setup
 
 ```bash
-git clone https://github.com/pkasinathan/mac-agents-manager.git
-cd mac-agents-manager
+git clone https://github.com/pkasinathan/mac-agents-manager-ai.git
+cd mac-agents-manager-ai
 make dev
 source venv/bin/activate
 ```
