@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mac-agents-manager-ai"
-version = "1.2.2"
-description = "A web UI for managing macOS LaunchAgents -- create, edit, start, stop, and reload agents from your browser"
+version = "2.0.0"
+description = "A web UI for managing macOS LaunchAgents -- create, edit, start, stop, and reload agents from your browser, with AI Chat powered by Ollama"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
 authors = [
     {name = "Mac Agents Manager Contributors"},
 ]
-keywords = ["macos", "launchagent", "launchd", "automation", "system-administration"]
+keywords = ["macos", "launchagent", "launchd", "automation", "system-administration", "ai", "ollama"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Operating System :: MacOS",
@@ -26,6 +26,7 @@ classifiers = [
 ]
 dependencies = [
     "Flask>=3.0.0",
+    "requests>=2.31.0",
 ]
 
 [project.optional-dependencies]
@@ -82,8 +83,8 @@ ignore = [
     "E501",    # line too long (handled by formatter)
     "A002",    # shadowing builtins (e.g. `type`, `format`)
     "UP007",   # Optional[X] -> X | None (keep for 3.10 compat)
-    "SIM102",  # nested if → combined (readability preference)
-    "SIM117",  # multiple with → combined (readability preference)
+    "SIM102",  # nested if -> combined (readability preference)
+    "SIM117",  # multiple with -> combined (readability preference)
     "SIM108",  # ternary instead of if/else (readability preference)
     "SIM105",  # contextlib.suppress (readability preference)
     "B904",    # raise from (gradual migration)
