@@ -4,6 +4,7 @@
 
 [![CI](https://github.com/pkasinathan/mac-agents-manager-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/pkasinathan/mac-agents-manager-ai/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/mac-agents-manager-ai)](https://pypi.org/project/mac-agents-manager-ai/)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/mac-agents-manager-ai?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/mac-agents-manager-ai)
 [![Python](https://img.shields.io/pypi/pyversions/mac-agents-manager-ai)](https://pypi.org/project/mac-agents-manager-ai/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
