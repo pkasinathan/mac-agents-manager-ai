@@ -12,7 +12,6 @@ Use this checklist before publishing a new release.
 
 - Update user-facing docs:
   - `README.md`
-  - `QUICK_START.md`
   - `FAQ.md`
   - `TROUBLESHOOTING.md`
 - Verify docs match current behavior:

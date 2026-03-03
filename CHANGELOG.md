@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Improved
 
-- Ollama installation instructions added to README Quick Start, QUICK_START.md, FAQ, and TROUBLESHOOTING.md
+- Ollama installation instructions added to README Quick Start, FAQ, and TROUBLESHOOTING.md
 - All documentation aligned with Chronometry project patterns (style, structure, themes)
 - Added RELEASE.md checklist (mirrors Chronometry release workflow)
 - CONTRIBUTING.md expanded with coding standards, commit message conventions, and PR guidelines
@@ -35,7 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Chat API endpoints** — `/api/chat/health`, `/api/chat/send`, `/api/chat/confirm`, `/api/chat/history`, `/api/chat/sessions`, `/api/chat/clear`
 - **New modules** — `ollama_chat.py` (engine, system prompt, action parsing) and `chat_history.py` (persistence, session management)
 - **Environment variables** — `MAM_OLLAMA_BASE_URL` and `MAM_OLLAMA_MODEL` for Ollama configuration
-- **Documentation** — `RELEASE.md` checklist, Ollama install instructions in README/QUICK_START/FAQ/TROUBLESHOOTING
+- **Documentation** — `RELEASE.md` checklist, Ollama install instructions in README/FAQ/TROUBLESHOOTING
 
 ### Changed
 
