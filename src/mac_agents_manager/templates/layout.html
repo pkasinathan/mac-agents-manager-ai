@@ -46,11 +46,19 @@
     </div>
 
     <script>
+        // ===================================================================
         // Global state
+        // ===================================================================
         let currentServiceId = null;
         let currentServiceData = null;
         let servicesTree = null;
         let timeSlotCount = 1;
+        let currentMode = 'ide';  // 'ide' or 'chat'
+
+        // Chat state
+        let chatSessionId = localStorage.getItem('mam-chat-session') || '';
+        let chatOllamaReady = false;
+        let chatPendingAction = null;  // Holds the action awaiting confirmation
 
         function getCSRFToken() {
             const meta = document.querySelector('meta[name="csrf-token"]');
@@ -72,7 +80,341 @@
             loadServicesTree();
         });
 
-        // Load services tree
+        // ===================================================================
+        // Mode switching (IDE / AI Chat)
+        // ===================================================================
+        function switchMode(mode) {
+            currentMode = mode;
+
+            // Update tab buttons
+            document.querySelectorAll('.mode-tab').forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.mode === mode);
+            });
+
+            // Toggle panels
+            const editorTop = document.getElementById('editor-top');
+            const editorBottom = document.getElementById('editor-bottom');
+            const chatPanel = document.getElementById('chat-panel');
+            const ideActions = document.getElementById('ide-actions');
+
+            if (mode === 'ide') {
+                editorTop.classList.remove('hidden');
+                editorBottom.classList.remove('hidden');
+                chatPanel.classList.add('hidden');
+                ideActions.style.display = 'flex';
+            } else {
+                editorTop.classList.add('hidden');
+                editorBottom.classList.add('hidden');
+                chatPanel.classList.remove('hidden');
+                ideActions.style.display = 'none';
+
+                // Initialize chat if first time
+                if (!chatOllamaReady) {
+                    checkOllamaHealth();
+                }
+                updateChatSuggestions();
+                scrollChatToBottom();
+            }
+        }
+
+        // ===================================================================
+        // Ollama Health Check
+        // ===================================================================
+        async function checkOllamaHealth() {
+            const dot = document.getElementById('chat-status-dot');
+            const text = document.getElementById('chat-status-text');
+            dot.className = 'chat-status-dot connecting';
+            text.textContent = 'Connecting to Ollama...';
+
+            try {
+                const resp = await fetch('/api/chat/health');
+                const data = await resp.json();
+
+                if (data.ollama_running && data.model_available) {
+                    dot.className = 'chat-status-dot connected';
+                    text.textContent = `Connected: ${data.model_name}`;
+                    chatOllamaReady = true;
+                } else if (data.ollama_running) {
+                    dot.className = 'chat-status-dot connecting';
+                    text.textContent = `Ollama running, model loading...`;
+                    chatOllamaReady = true; // Will auto-pull
+                } else {
+                    dot.className = 'chat-status-dot disconnected';
+                    text.textContent = 'Ollama not running. Starting...';
+                    chatOllamaReady = false;
+                    // Retry in a few seconds (auto-start kicks in on first message)
+                    setTimeout(checkOllamaHealth, 5000);
+                }
+            } catch (err) {
+                dot.className = 'chat-status-dot disconnected';
+                text.textContent = 'Cannot reach server';
+                chatOllamaReady = false;
+            }
+        }
+
+        // ===================================================================
+        // Chat Suggestions
+        // ===================================================================
+        const GLOBAL_SUGGESTIONS = [
+            { icon: '📊', label: 'Summarize all services', message: 'Give me a full summary of all my LaunchAgents - counts, status breakdown, namespaces.' },
+            { icon: '📈', label: 'Service statistics', message: 'Show me detailed statistics: running, stopped, loaded counts per namespace.' },
+            { icon: '🚀', label: 'Start all KeepAlive', message: 'Start all stopped KeepAlive agents.' },
+            { icon: '🔍', label: 'Find failing services', message: 'List any agents that have errors in their stderr logs.' },
+            { icon: '📝', label: 'List scheduled agents', message: 'Show all scheduled agents with their cron times.' },
+            { icon: '➕', label: 'Create new agent', message: 'I want to create a new LaunchAgent. Guide me through the setup.' },
+            { icon: '🏷️', label: 'List namespaces', message: 'Show all namespaces and how many agents are in each.' },
+        ];
+
+        const SERVICE_SUGGESTIONS = [
+            { icon: 'ℹ️', label: 'Summarize', message: 'Summarize this service: show label, status, schedule, script, and recent logs.' },
+            { icon: '📅', label: 'Change schedule', message: 'Change the schedule for this service.' },
+            { icon: '✏️', label: 'Rename', message: 'Rename this agent.' },
+            { icon: '🔄', label: 'Change script', message: 'Change the script/command path for this service.' },
+            { icon: '📂', label: 'Change working dir', message: 'Change the working directory for this service.' },
+            { icon: '🌍', label: 'Edit env vars', message: 'Edit the environment variables for this service.' },
+            { icon: '▶️', label: 'Start', message: 'Start this service.' },
+            { icon: '⏹️', label: 'Stop', message: 'Stop this service.' },
+            { icon: '🔁', label: 'Restart', message: 'Restart this service.' },
+            { icon: '📥', label: 'Load', message: 'Load this service into launchd.' },
+            { icon: '📤', label: 'Unload', message: 'Unload this service from launchd.' },
+            { icon: '📄', label: 'Show plist', message: 'Show the raw plist XML for this service.' },
+            { icon: '📋', label: 'Show stdout', message: 'Show recent stdout logs for this service.' },
+            { icon: '🚨', label: 'Show stderr', message: 'Show recent stderr logs for this service.' },
+            { icon: '🗑️', label: 'Delete', message: 'Delete this agent.' },
+            { icon: '🔀', label: 'Convert type', message: 'Convert this agent between KeepAlive and Scheduled.' },
+        ];
+
+        function updateChatSuggestions() {
+            const container = document.getElementById('chat-suggestions');
+            const suggestions = currentServiceId && currentServiceId !== 'new'
+                ? SERVICE_SUGGESTIONS
+                : GLOBAL_SUGGESTIONS;
+
+            container.innerHTML = suggestions.map(s =>
+                `<button class="suggestion-chip" onclick="sendSuggestion('${escapeHtml(s.message.replace(/'/g, "\\'"))}')">${s.icon} ${escapeHtml(s.label)}</button>`
+            ).join('');
+        }
+
+        function sendSuggestion(message) {
+            document.getElementById('chat-input').value = message;
+            sendChatMessage();
+        }
+
+        // ===================================================================
+        // Chat Messaging
+        // ===================================================================
+        async function sendChatMessage() {
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            if (!message) return;
+
+            input.value = '';
+            input.disabled = true;
+            document.getElementById('chat-send').disabled = true;
+
+            // Add user message to UI
+            appendChatMessage('user', message);
+
+            // Show loading
+            const loadingId = showChatLoading();
+
+            try {
+                const resp = await fetch('/api/chat/send', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': getCSRFToken(),
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        service_id: currentServiceId || '',
+                        session_id: chatSessionId,
+                    }),
+                });
+
+                const data = await resp.json();
+
+                // Update session
+                if (data.session_id) {
+                    chatSessionId = data.session_id;
+                    localStorage.setItem('mam-chat-session', chatSessionId);
+                }
+
+                // Remove loading
+                removeChatLoading(loadingId);
+
+                // Check for error
+                if (data.error === 'ollama_unavailable') {
+                    appendChatMessage('assistant', data.response, null, true);
+                    checkOllamaHealth();
+                } else if (data.requires_confirmation && data.action) {
+                    // Show response + action confirmation buttons
+                    chatPendingAction = data.action;
+                    appendChatMessage('assistant', data.response, data.action);
+                } else {
+                    appendChatMessage('assistant', data.response);
+                }
+
+                // Update Ollama status on first successful response
+                if (!data.error) {
+                    const dot = document.getElementById('chat-status-dot');
+                    const stext = document.getElementById('chat-status-text');
+                    dot.className = 'chat-status-dot connected';
+                    stext.textContent = 'Connected';
+                    chatOllamaReady = true;
+                }
+
+            } catch (err) {
+                removeChatLoading(loadingId);
+                appendChatMessage('assistant', 'Failed to get a response. Please try again.', null, true);
+                console.error('Chat error:', err);
+            }
+
+            input.disabled = false;
+            document.getElementById('chat-send').disabled = false;
+            input.focus();
+        }
+
+        function appendChatMessage(role, content, action, isError) {
+            const container = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            div.className = `chat-message ${role}`;
+
+            const avatar = role === 'user' ? '👤' : '🤖';
+            let bubbleClass = 'chat-bubble';
+            if (isError) bubbleClass += ' chat-error';
+
+            // Format content: basic markdown-like rendering
+            let formatted = escapeHtml(content)
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\n/g, '<br>');
+
+            let actionHtml = '';
+            if (action) {
+                actionHtml = `
+                    <div class="chat-action-buttons">
+                        <button class="btn-chat-apply" onclick="confirmChatAction()">✅ Apply</button>
+                        <button class="btn-chat-cancel" onclick="cancelChatAction(this)">❌ Cancel</button>
+                    </div>
+                `;
+            }
+
+            div.innerHTML = `
+                <span class="chat-avatar">${avatar}</span>
+                <div class="${bubbleClass}">
+                    ${formatted}
+                    ${actionHtml}
+                </div>
+            `;
+
+            container.appendChild(div);
+            scrollChatToBottom();
+        }
+
+        function showChatLoading() {
+            const container = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            const id = 'loading-' + Date.now();
+            div.id = id;
+            div.className = 'chat-message assistant';
+            div.innerHTML = `
+                <span class="chat-avatar">🤖</span>
+                <div class="chat-bubble chat-loading">
+                    <span class="loading-dots">
+                        <span>.</span><span>.</span><span>.</span>
+                    </span>
+                    Thinking...
+                </div>
+            `;
+            container.appendChild(div);
+            scrollChatToBottom();
+            return id;
+        }
+
+        function removeChatLoading(loadingId) {
+            const el = document.getElementById(loadingId);
+            if (el) el.remove();
+        }
+
+        function scrollChatToBottom() {
+            const container = document.getElementById('chat-messages');
+            // Use setTimeout to ensure DOM is updated
+            setTimeout(() => {
+                container.scrollTop = container.scrollHeight;
+            }, 50);
+        }
+
+        // ===================================================================
+        // Chat Action Confirmation
+        // ===================================================================
+        async function confirmChatAction() {
+            if (!chatPendingAction) return;
+
+            const action = chatPendingAction;
+            chatPendingAction = null;
+
+            // Disable all action buttons
+            document.querySelectorAll('.chat-action-buttons').forEach(el => {
+                el.innerHTML = '<span class="chat-action-pending">⏳ Applying...</span>';
+            });
+
+            try {
+                const resp = await fetch('/api/chat/confirm', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': getCSRFToken(),
+                    },
+                    body: JSON.stringify({
+                        session_id: chatSessionId,
+                        action: action,
+                    }),
+                });
+
+                const result = await resp.json();
+
+                if (result.success) {
+                    appendChatMessage('assistant', `✅ ${result.message}`);
+                    // Refresh the tree and service data
+                    await loadServicesTree();
+                    if (currentServiceId && currentServiceId !== 'new') {
+                        // If service was renamed or deleted, update accordingly
+                        if (result.service_id) {
+                            currentServiceId = result.service_id;
+                        }
+                        if (action.action !== 'delete') {
+                            try { await loadService(currentServiceId); } catch (_) {}
+                        } else {
+                            currentServiceId = null;
+                            currentServiceData = null;
+                            updateChatSuggestions();
+                        }
+                    }
+                } else {
+                    appendChatMessage('assistant', `❌ Failed: ${result.message}`, null, true);
+                }
+
+            } catch (err) {
+                appendChatMessage('assistant', '❌ Failed to execute action. Please try again.', null, true);
+                console.error('Confirm error:', err);
+            }
+
+            // Clean up any remaining action buttons
+            document.querySelectorAll('.chat-action-buttons, .chat-action-pending').forEach(el => el.remove());
+        }
+
+        function cancelChatAction(btn) {
+            chatPendingAction = null;
+            // Remove the action buttons from the message
+            const buttonsDiv = btn.parentElement;
+            buttonsDiv.innerHTML = '<span class="chat-action-cancelled">❌ Cancelled</span>';
+            appendChatMessage('assistant', 'Action cancelled. What would you like to do instead?');
+        }
+
+        // ===================================================================
+        // Services Tree
+        // ===================================================================
         async function loadServicesTree() {
             try {
                 const response = await fetch('/api/services');
@@ -184,11 +526,25 @@
                 const el = document.querySelector(`[data-service-id="${CSS.escape(serviceId)}"]`);
                 if (el) el.classList.add('selected');
                 
-                // Render editor form
-                renderEditor();
-                populateForm();
-                updatePlistPreview();
-                updateLogs();
+                // Update editor title
+                const editorTitle = document.getElementById('editor-title');
+                if (editorTitle && currentServiceData) {
+                    editorTitle.textContent = currentServiceData.name || 'Service Editor';
+                }
+
+                if (currentMode === 'ide') {
+                    // Render IDE view
+                    renderEditor();
+                    populateForm();
+                    updatePlistPreview();
+                    updateLogs();
+                } else {
+                    // Update chat suggestions for the selected service
+                    updateChatSuggestions();
+                    // Notify in chat
+                    const label = currentServiceData.label || serviceId;
+                    appendChatMessage('assistant', `Now viewing: <strong>${escapeHtml(label)}</strong>. I can help with this service — check the suggested actions above.`);
+                }
             } catch (error) {
                 console.error('Error loading service:', error);
                 showFlashMessage('Error loading service', 'error');
@@ -345,8 +701,6 @@
         
         // Update plist preview
         function updatePlistPreview() {
-            // For now, just show the current plist XML
-            // In a real implementation, you'd regenerate it from form data
             if (currentServiceData && currentServiceData.plist_xml) {
                 document.querySelector('#panel-plist pre').textContent = currentServiceData.plist_xml;
             }
@@ -357,7 +711,6 @@
             if (!currentServiceId || currentServiceId === 'new') return;
             
             try {
-                // Fetch fresh service data to get updated logs
                 const response = await fetch(`/api/service/${currentServiceId}`);
                 const serviceData = await response.json();
                 
@@ -402,6 +755,9 @@
         async function createNewService(scheduleType) {
             currentServiceId = 'new';
             
+            // Switch to IDE mode for creation
+            switchMode('ide');
+            
             // Fetch default environment variables from backend
             let defaultEnv = {};
             try {
@@ -409,7 +765,6 @@
                 defaultEnv = await response.json();
             } catch (error) {
                 console.error('Error fetching default env:', error);
-                // Fallback defaults
                 defaultEnv = {
                     'HOME': '/Users/user',
                     'PATH': '/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin',
@@ -423,7 +778,7 @@
                 label: '',
                 category: '',
                 program: '',
-                schedule_type: scheduleType,  // 'scheduled' or 'keepalive'
+                schedule_type: scheduleType,
                 schedule_times: scheduleType === 'scheduled' ? [{'Hour': 10, 'Minute': 0}] : [],
                 working_directory: '',
                 environment: defaultEnv,
@@ -475,7 +830,6 @@
         async function performSave(formData) {
             const data = Object.fromEntries(formData.entries());
             
-            // Add schedule_type from currentServiceData
             if (currentServiceData) {
                 data.schedule_type = currentServiceData.schedule_type;
             }
@@ -494,14 +848,12 @@
                 
                 if (result.success) {
                     showFlashMessage(result.message, 'success');
-                    // Reload tree and service
                     await loadServicesTree();
                     if (currentServiceId === 'new' && result.service_id) {
                         await loadService(result.service_id);
                     } else {
                         await loadService(currentServiceId);
                     }
-                    // Refresh plist preview after save
                     updatePlistPreview();
                 } else {
                     showFlashMessage(result.message, 'error');
@@ -534,16 +886,11 @@
                 
                 if (result.success) {
                     showFlashMessage(result.message, 'success');
-                    // Reload agent to update status
                     await loadService(currentServiceId);
                     await loadServicesTree();
                     
-                    // Refresh logs for load/unload/start/stop actions
                     if (action === 'load' || action === 'start') {
-                        // Wait a moment for logs to be written
-                        setTimeout(() => {
-                            updateLogs();
-                        }, 1000);
+                        setTimeout(() => { updateLogs(); }, 1000);
                     }
                 } else {
                     showFlashMessage(result.message, 'error');
@@ -579,14 +926,9 @@
                 
                 if (result.success) {
                     showFlashMessage('Agent executed once successfully', 'success');
-                    // Reload agent to update status
                     await loadService(currentServiceId);
                     await loadServicesTree();
-                    
-                    // Refresh logs after running once
-                    setTimeout(() => {
-                        updateLogs();
-                    }, 1000);
+                    setTimeout(() => { updateLogs(); }, 1000);
                 } else {
                     showFlashMessage(result.message, 'error');
                 }
@@ -596,7 +938,7 @@
             }
         }
         
-        // Reload agent - unload and load in launchd
+        // Reload agent
         async function reloadAgent() {
             if (!currentServiceId || currentServiceId === 'new') {
                 showFlashMessage('Please save the agent first', 'error');
@@ -604,10 +946,7 @@
             }
             
             try {
-                // For self-agent, use restart which triggers kickstart on backend
                 if (currentServiceId === 'agent:user.productivity.mac_agents_manager') {
-                    // Fire-and-forget: the server connection will drop during restart, which would otherwise
-                    // surface as a fetch error even though restart succeeded.
                     try {
                         fetch(`/control/${currentServiceId}/restart`, {
                             method: 'POST',
@@ -616,12 +955,10 @@
                         }).catch(() => {});
                     } catch (_) {}
                     showFlashMessage('Restarting Mac Agents Manager...', 'info');
-                    // Give the agent a moment to come back, then refresh UI
                     setTimeout(() => { window.location.reload(); }, 1500);
                     return;
                 }
 
-                // Default path: unload then load
                 const unloadResponse = await fetch(`/control/${currentServiceId}/unload`, {
                     method: 'POST',
                     headers: { 'Accept': 'application/json', 'X-CSRF-Token': getCSRFToken() }
@@ -668,18 +1005,20 @@
                 
                 if (response.ok) {
                     showFlashMessage('Agent deleted successfully', 'success');
-                    // Clear editor and reload tree
                     document.getElementById('editor-top').innerHTML = '<div class="welcome"><h2>Welcome to Mac Agents Manager</h2><p>Select an agent from the sidebar to edit, or create a new one.</p></div>';
                     document.querySelector('#panel-plist pre').textContent = 'No agent selected';
                     
-                    // Hide editor header
-                    const editorHeader = document.getElementById('editor-header');
-                    if (editorHeader) {
-                        editorHeader.style.display = 'none';
-                    }
+                    const editorTitle = document.getElementById('editor-title');
+                    if (editorTitle) editorTitle.textContent = 'Mac Agents Manager';
                     
                     currentServiceId = null;
                     currentServiceData = null;
+                    
+                    // Update chat suggestions if in chat mode
+                    if (currentMode === 'chat') {
+                        updateChatSuggestions();
+                    }
+                    
                     await loadServicesTree();
                 } else {
                     showFlashMessage('Error deleting service', 'error');
@@ -742,7 +1081,6 @@
                         showFlashMessage('All KeepAlive agents are already running!', 'success');
                     } else {
                         showFlashMessage(`Started ${data.count} agent(s) successfully!`, 'success');
-                        // Reload services tree
                         await loadServicesTree();
                         if (currentServiceId) {
                             await loadService(currentServiceId);
@@ -781,4 +1119,3 @@
     {% block scripts %}{% endblock %}
 </body>
 </html>
-

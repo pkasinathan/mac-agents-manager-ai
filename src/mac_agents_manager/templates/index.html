@@ -31,10 +31,14 @@
 
     <!-- Right Editor Panel -->
     <main class="editor-panel">
-        <!-- Editor Header with buttons -->
-        <div class="editor-header" id="editor-header" style="display: none;">
-            <div class="editor-title" id="editor-title">Service Editor</div>
-            <div class="editor-actions">
+        <!-- Editor Header with mode tabs and buttons -->
+        <div class="editor-header" id="editor-header">
+            <div class="editor-title" id="editor-title">Mac Agents Manager</div>
+            <div class="editor-mode-tabs">
+                <button class="mode-tab active" data-mode="ide" onclick="switchMode('ide')">IDE</button>
+                <button class="mode-tab" data-mode="chat" onclick="switchMode('chat')">AI Chat</button>
+            </div>
+            <div class="editor-actions" id="ide-actions">
                 <a id="btn-port-link" class="btn btn-port" href="#" target="_blank" style="display: none;"></a>
                 <button type="button" class="btn btn-primary" onclick="saveServiceFromHeader()">Save</button>
                 <button type="button" class="btn btn-secondary" onclick="controlAction('load')" id="btn-load-header">Load</button>
@@ -45,7 +49,7 @@
             </div>
         </div>
         
-        <!-- Top Section - Editor Form -->
+        <!-- IDE Mode: Top Section - Editor Form -->
         <div class="editor-top" id="editor-top">
             <div class="welcome">
                 <h2>Welcome to Mac Agents Manager</h2>
@@ -53,7 +57,7 @@
             </div>
         </div>
 
-        <!-- Bottom Section - Plist Preview / Logs -->
+        <!-- IDE Mode: Bottom Section - Plist Preview / Logs -->
         <div class="editor-bottom" id="editor-bottom">
             <div class="panel-tabs">
                 <button class="panel-tab active" onclick="switchPanel('plist', event)">Plist Preview</button>
@@ -70,6 +74,33 @@
                 <div id="panel-stderr" class="log-viewer hidden">
                     <pre class="log-empty">No logs available</pre>
                 </div>
+            </div>
+        </div>
+
+        <!-- AI Chat Mode Panel -->
+        <div id="chat-panel" class="chat-panel hidden">
+            <!-- Ollama Status Bar -->
+            <div class="chat-status-bar" id="chat-status-bar">
+                <span class="chat-status-dot" id="chat-status-dot"></span>
+                <span id="chat-status-text">Checking Ollama...</span>
+            </div>
+
+            <!-- Suggested Prompts -->
+            <div class="chat-suggestions" id="chat-suggestions"></div>
+
+            <!-- Messages -->
+            <div class="chat-messages" id="chat-messages">
+                <div class="chat-message assistant">
+                    <span class="chat-avatar">🤖</span>
+                    <div class="chat-bubble">Welcome! I can help manage your LaunchAgents. Select a service from the sidebar, or ask me anything.</div>
+                </div>
+            </div>
+
+            <!-- Input -->
+            <div class="chat-input-area">
+                <input type="text" id="chat-input" placeholder="Type a message..." autocomplete="off"
+                       onkeydown="if(event.key==='Enter') sendChatMessage()">
+                <button id="chat-send" onclick="sendChatMessage()">Send</button>
             </div>
         </div>
     </main>
@@ -152,4 +183,3 @@
 </div>
 </script>
 {% endblock %}
-
