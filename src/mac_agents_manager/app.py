@@ -58,7 +58,9 @@ def set_security_headers(response):
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; "
         "connect-src 'self'; "
-        "frame-ancestors 'none'"
+        "frame-ancestors 'none'; "
+        "object-src 'none'; "
+        "base-uri 'self'"
     )
     response.headers['Content-Security-Policy'] = csp
     response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
@@ -66,6 +68,7 @@ def set_security_headers(response):
     origin = request.headers.get('Origin', '')
     if origin and origin not in allowed_origins:
         response.headers['Access-Control-Allow-Origin'] = ''
+    response.headers.pop("Server", None)
     return response
 
 

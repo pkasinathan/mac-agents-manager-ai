@@ -4,8 +4,12 @@
 
 from unittest.mock import patch
 
-from mac_agents_manager.app import _execute_chat_action, _execute_rename_action
-from mac_agents_manager.app import _find_pending_action, _resolve_action_service_id
+from mac_agents_manager.app import (
+    _execute_chat_action,
+    _execute_rename_action,
+    _find_pending_action,
+    _resolve_action_service_id,
+)
 from mac_agents_manager.models import LaunchService
 
 
