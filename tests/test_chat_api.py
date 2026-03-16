@@ -170,7 +170,7 @@ class TestChatSendEndpoint:
             engine = MagicMock()
             engine.max_context = 20
             engine.send_message.return_value = {
-                "response": "Started user.productivity.echo-hello",
+                "response": "Restarted user.productivity.echo-hello",
                 "action": None,
                 "requires_confirmation": False,
             }
@@ -183,12 +183,40 @@ class TestChatSendEndpoint:
 
             resp = client.post(
                 "/api/chat/send",
-                json={"message": "start my agent", "session_id": "chat_abc"},
+                json={"message": "restart my agent", "session_id": "chat_abc"},
                 headers={"X-CSRF-Token": csrf_token},
             )
             assert resp.status_code == 200
             data = resp.get_json()
             assert "I couldn't execute that yet because no structured action was produced." in data["response"]
+
+    def test_send_readonly_query_not_blocked_by_safety_guard(self, client, csrf_token):
+        """Read-only queries containing mutation-like words must not be blocked."""
+        with patch("mac_agents_manager.app._get_chat_engine") as mock_engine, \
+                patch("mac_agents_manager.app._get_chat_history") as mock_history:
+            engine = MagicMock()
+            engine.max_context = 20
+            engine.send_message.return_value = {
+                "response": "This agent is currently running on port 8050. Schedule: daily at 10:00.",
+                "action": None,
+                "requires_confirmation": False,
+            }
+            mock_engine.return_value = engine
+
+            history = MagicMock()
+            history.get_messages.return_value = []
+            history.get_conversation_history.return_value = []
+            mock_history.return_value = history
+
+            resp = client.post(
+                "/api/chat/send",
+                json={"message": "Summarize this service: show label, status, schedule, script, and recent logs.", "session_id": "chat_abc"},
+                headers={"X-CSRF-Token": csrf_token},
+            )
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert "running on port 8050" in data["response"]
+            assert "I couldn't execute" not in data["response"]
 
     def test_send_confirm_does_not_reexecute_already_completed_action(self, client, csrf_token):
         with patch("mac_agents_manager.app._get_chat_engine") as mock_engine, \

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2.0.5] - 2026-03-16
+
+### Fixed
+
+- **AI Chat safety guard false positive**: Read-only queries containing words like "schedule", "start", or "script" (e.g., "Summarize this service: show label, status, schedule, script") were incorrectly blocked by the mutation-detection safety guard. Rewrote `_looks_like_mutation_request()` with word-boundary regex and a read-only prefix exclusion list. Removed "running" and "started" from `_response_claims_execution_without_action()` since they are common in informational status descriptions.
+
+### Changed
+
+- AI Chat tab now displays "AI Chat (beta)" to set user expectations.
+
 ## [2.0.4] - 2026-03-16
 
 ### Security

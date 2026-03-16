@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mac-agents-manager-ai"
-version = "2.0.4"
+version = "2.0.5"
 description = "A web UI for managing macOS LaunchAgents -- create, edit, start, stop, and reload agents from your browser, with AI Chat powered by Ollama"
 readme = "README.md"
 license = {text = "Apache-2.0"}

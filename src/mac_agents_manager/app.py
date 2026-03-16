@@ -501,15 +501,29 @@ def _find_pending_action(messages: list[dict]) -> dict | None:
     return None
 
 
+_READ_ONLY_PREFIXES = (
+    "show", "summarize", "summary", "what", "list", "get", "describe",
+    "tell me", "how", "why", "which", "display", "view", "check",
+    "status", "info", "details", "explain", "is ", "are ", "does ",
+    "can you show", "can you list", "can you summarize",
+)
+
+
 def _looks_like_mutation_request(text: str) -> bool:
     """Best-effort detection for user requests that should produce an action."""
     normalized = re.sub(r'\s+', ' ', (text or '').strip().lower())
-    mutation_terms = (
-        "start", "stop", "restart", "reload", "load", "unload", "delete", "remove",
-        "create", "rename", "update", "change", "set", "run once", "run now",
-        "script should", "schedule", "convert",
+    normalized = re.sub(r'[.!?]+$', '', normalized)
+    if any(normalized.startswith(p) for p in _READ_ONLY_PREFIXES):
+        return False
+    mutation_patterns = (
+        r'\bstart\b', r'\bstop\b', r'\brestart\b', r'\breload\b',
+        r'\bload\b', r'\bunload\b', r'\bdelete\b', r'\bremove\b',
+        r'\bcreate\b', r'\brename\b', r'\bupdate\b', r'\bchange\b',
+        r'\bset\b', r'\bconvert\b',
+        r'\brun once\b', r'\brun now\b', r'\bscript should\b',
+        r'\bchange\s+(?:the\s+)?schedule\b',
     )
-    return any(term in normalized for term in mutation_terms)
+    return any(re.search(p, normalized) for p in mutation_patterns)
 
 
 def _response_claims_execution_without_action(text: str) -> bool:
@@ -521,8 +535,8 @@ def _response_claims_execution_without_action(text: str) -> bool:
     if normalized.startswith(suspicious_prefixes):
         return True
     suspicious_phrases = (
-        "updated script", "created and loaded", "started ", "stopped ",
-        "restarted ", "executed once", "running ", "deleted ",
+        "updated script", "created and loaded",
+        "restarted ", "executed once", "deleted ",
     )
     return any(p in normalized for p in suspicious_phrases)
 
