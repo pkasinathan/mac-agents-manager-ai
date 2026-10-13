@@ -1,0 +1,109 @@
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mac-agents-manager-ai"
+version = "2.1.3"
+description = "A web UI for managing macOS LaunchAgents -- create, edit, start, stop, and reload agents from your browser, with AI Chat powered by Ollama"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Mac Agents Manager Contributors"},
+]
+keywords = ["macos", "launchagent", "launchd", "automation", "system-administration", "ai", "ollama"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Systems Administration",
+    "Framework :: Flask",
+]
+dependencies = [
+    "Flask>=3.0.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "ruff>=0.4.0",
+    "build>=1.0.0",
+    "twine>=5.0.0",
+]
+
+[project.scripts]
+mam = "mac_agents_manager.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/pkasinathan/mac-agents-manager-ai"
+Documentation = "https://github.com/pkasinathan/mac-agents-manager-ai#readme"
+Repository = "https://github.com/pkasinathan/mac-agents-manager-ai"
+Issues = "https://github.com/pkasinathan/mac-agents-manager-ai/issues"
+Changelog = "https://github.com/pkasinathan/mac-agents-manager-ai/blob/main/CHANGELOG.md"
+
+# ── Setuptools ────────────────────────────────────────────────────────────────
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+mac_agents_manager = [
+    "templates/*.html",
+    "static/*.css",
+]
+
+# ── Ruff (replaces black + flake8 + isort) ──────────────────────────────────
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "N",    # pep8-naming
+    "B",    # flake8-bugbear
+    "A",    # flake8-builtins
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",    # line too long (handled by formatter)
+    "A002",    # shadowing builtins (e.g. `type`, `format`)
+    "UP007",   # Optional[X] -> X | None (keep for 3.10 compat)
+    "SIM102",  # nested if -> combined (readability preference)
+    "SIM117",  # multiple with -> combined (readability preference)
+    "SIM108",  # ternary instead of if/else (readability preference)
+    "SIM105",  # contextlib.suppress (readability preference)
+    "B904",    # raise from (gradual migration)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"src/mac_agents_manager/cli.py" = ["N806"]
+"src/mac_agents_manager/models.py" = ["E722"]
+"tests/*" = ["W293", "W291", "F841", "F401", "F821", "E722", "B007", "B017", "RUF059"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["mac_agents_manager"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ── Pytest ───────────────────────────────────────────────────────────────────
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"

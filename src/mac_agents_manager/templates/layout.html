@@ -1,0 +1,1507 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Mac Agents Manager{% endblock %}</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙️</text></svg>">
+    <link rel="stylesheet" href="{{ url_for('static', filename='pico.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% if csrf_token %}<meta name="csrf-token" content="{{ csrf_token }}">{% endif %}
+    <script>
+        (function() {
+            var t = localStorage.getItem('mac-agents-theme');
+            if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+        })();
+    </script>
+</head>
+<body>
+    <header>
+        <div>
+            <h1>Mac Agents Manager</h1>
+            <span class="subtitle">Automate Tasks & Keep Apps Running{% if port %} &bull; Port {{ port }}{% endif %}</span>
+        </div>
+        <div class="header-right">
+            <button class="theme-toggle" onclick="toggleTheme()" title="Toggle dark/light theme" id="theme-toggle-btn">🌙</button>
+        </div>
+    </header>
+
+    {% block content %}{% endblock %}
+
+    <!-- Modal for sudo commands -->
+    <div id="sudoModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Sudo Access Required</h2>
+            </div>
+            <div class="modal-body">
+                <p id="modalMessage">This operation requires sudo access. Please run the following command in your Terminal:</p>
+                <div class="command-box" id="sudoCommand"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="copyCommand()">Copy Command</button>
+                <button class="btn btn-primary" onclick="closeModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Per-agent report for actions that touch many agents at once -->
+    <div id="bulkResultModal" class="modal">
+        <div class="modal-content modal-content-wide">
+            <div class="modal-header">
+                <h2 id="bulkResultTitle">Bulk action</h2>
+            </div>
+            <div class="modal-body">
+                <p id="bulkResultSummary" class="bulk-summary"></p>
+                <div id="bulkResultList" class="bulk-result-list"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="copyBulkResult()">Copy Report</button>
+                <button class="btn btn-primary" onclick="closeBulkResultModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ===================================================================
+        // Global state
+        // ===================================================================
+        let currentServiceId = null;
+        let currentServiceData = null;
+        let servicesTree = null;
+        let timeSlotCount = 1;
+        let currentMode = 'ide';  // 'ide' or 'chat'
+        let startupRestored = false;
+
+        // Chat state
+        let chatSessionId = localStorage.getItem('mam-chat-session') || '';
+        let chatOllamaReady = false;
+        let chatPendingAction = null;  // Holds the action awaiting confirmation
+        const CHAT_WELCOME_HTML = `
+            <div class="chat-message assistant">
+                <span class="chat-avatar">🤖</span>
+                <div class="chat-bubble">Welcome! I can help manage your LaunchAgents. Select a service from the sidebar, or ask me anything.</div>
+            </div>
+        `;
+
+        function getCSRFToken() {
+            const meta = document.querySelector('meta[name="csrf-token"]');
+            return meta ? meta.getAttribute('content') : '';
+        }
+
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#x27;');
+        }
+
+        // Mutating endpoints answer with JSON, but an expired CSRF token or a
+        // server error arrives as an HTML page. Parsing that as JSON throws and
+        // costs the caller the real reason, so read the body defensively and
+        // raise a message worth showing the user.
+        async function readJsonResponse(response) {
+            let payload = null;
+            try {
+                payload = await response.json();
+            } catch (_) {
+                payload = null;
+            }
+
+            if (response.ok) {
+                return payload || {};
+            }
+            if (payload && payload.message) {
+                throw new Error(payload.message);
+            }
+            if (response.status === 403) {
+                throw new Error('Session expired because the dashboard restarted. Refresh the page, then try again.');
+            }
+            throw new Error(`Request failed (HTTP ${response.status})`);
+        }
+
+        // Agents that run on a timer and exit, rather than staying resident.
+        const TIMER_SCHEDULE_TYPES = ['scheduled', 'interval'];
+
+        function isTimerScheduleType(scheduleType) {
+            return TIMER_SCHEDULE_TYPES.includes(scheduleType);
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', async function() {
+            await loadServicesTree();
+            await restoreUiState();
+            updateIdeActionsVisibility();
+            initChatInput();
+        });
+
+        async function restoreUiState() {
+            if (startupRestored) return;
+            startupRestored = true;
+
+            // Restore selected service if it still exists
+            const savedServiceId = localStorage.getItem('mam-selected-service') || '';
+            if (savedServiceId) {
+                try {
+                    await loadService(savedServiceId);
+                } catch (_) {
+                    localStorage.removeItem('mam-selected-service');
+                }
+            }
+
+            // Restore last mode
+            const savedMode = localStorage.getItem('mam-ui-mode');
+            if (savedMode === 'chat' || savedMode === 'ide') {
+                switchMode(savedMode);
+            }
+
+            // Restore the active chat session (or latest persisted session)
+            await restoreChatSession();
+            await refreshChatSessionList(chatSessionId);
+        }
+
+        // ===================================================================
+        // Mode switching (IDE / AI Chat)
+        // ===================================================================
+        function switchMode(mode) {
+            currentMode = mode;
+            localStorage.setItem('mam-ui-mode', mode);
+
+            // Update tab buttons
+            document.querySelectorAll('.mode-tab').forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.mode === mode);
+            });
+
+            // Toggle panels
+            const editorTop = document.getElementById('editor-top');
+            const editorBottom = document.getElementById('editor-bottom');
+            const chatPanel = document.getElementById('chat-panel');
+            const ideActions = document.getElementById('ide-actions');
+
+            if (mode === 'ide') {
+                editorTop.classList.remove('hidden');
+                editorBottom.classList.remove('hidden');
+                chatPanel.classList.add('hidden');
+                // Refresh IDE panels from latest loaded service state.
+                if (currentServiceData) {
+                    renderEditor();
+                    populateForm();
+                    updatePlistPreview();
+                    updateLogs();
+                }
+            } else {
+                editorTop.classList.add('hidden');
+                editorBottom.classList.add('hidden');
+                chatPanel.classList.remove('hidden');
+
+                // Initialize chat if first time
+                if (!chatOllamaReady) {
+                    checkOllamaHealth();
+                }
+                updateChatSuggestions();
+                refreshChatSessionList(chatSessionId);
+                scrollChatToBottom();
+            }
+            updateIdeActionsVisibility();
+        }
+
+        function updateIdeActionsVisibility() {
+            const ideActions = document.getElementById('ide-actions');
+            const btnSave = document.getElementById('btn-save-header');
+            const btnLoad = document.getElementById('btn-load-header');
+            const btnUnload = document.getElementById('btn-unload-header');
+            const btnReload = document.getElementById('btn-reload-header');
+            const btnDelete = document.getElementById('btn-delete-header');
+            const btnRunOnce = document.getElementById('btn-runonce-header');
+            const btnPort = document.getElementById('btn-port-link');
+
+            if (!ideActions) return;
+
+            // Hide all IDE actions in chat mode.
+            if (currentMode !== 'ide') {
+                ideActions.style.display = 'none';
+                return;
+            }
+
+            const hasExistingService = Boolean(currentServiceId && currentServiceId !== 'new');
+            const isCreatingNew = currentServiceId === 'new';
+            const showActions = hasExistingService || isCreatingNew;
+
+            ideActions.style.display = showActions ? 'flex' : 'none';
+            if (!showActions) return;
+
+            if (btnSave) btnSave.style.display = 'inline-block';
+            if (btnLoad) btnLoad.style.display = hasExistingService ? 'inline-block' : 'none';
+            if (btnUnload) btnUnload.style.display = hasExistingService ? 'inline-block' : 'none';
+            if (btnReload) btnReload.style.display = hasExistingService ? 'inline-block' : 'none';
+            if (btnDelete) btnDelete.style.display = hasExistingService ? 'inline-block' : 'none';
+            if (btnRunOnce) btnRunOnce.style.display = hasExistingService ? btnRunOnce.style.display : 'none';
+            if (btnPort && !hasExistingService) btnPort.style.display = 'none';
+        }
+
+        // ===================================================================
+        // Ollama Health Check
+        // ===================================================================
+        async function checkOllamaHealth() {
+            const dot = document.getElementById('chat-status-dot');
+            const text = document.getElementById('chat-status-text');
+            dot.className = 'chat-status-dot connecting';
+            text.textContent = 'Connecting to Ollama...';
+
+            try {
+                const resp = await fetch('/api/chat/health');
+                const data = await resp.json();
+
+                if (data.ollama_running && data.model_available) {
+                    dot.className = 'chat-status-dot connected';
+                    text.textContent = `Connected: ${data.model_name}`;
+                    chatOllamaReady = true;
+                } else if (data.ollama_running) {
+                    dot.className = 'chat-status-dot connecting';
+                    text.textContent = `Ollama running, model loading...`;
+                    chatOllamaReady = true; // Will auto-pull
+                } else {
+                    dot.className = 'chat-status-dot disconnected';
+                    text.textContent = 'Ollama not running. Starting...';
+                    chatOllamaReady = false;
+                    // Retry in a few seconds (auto-start kicks in on first message)
+                    setTimeout(checkOllamaHealth, 5000);
+                }
+            } catch (err) {
+                dot.className = 'chat-status-dot disconnected';
+                text.textContent = 'Cannot reach server';
+                chatOllamaReady = false;
+            }
+        }
+
+        // ===================================================================
+        // Chat Suggestions
+        // ===================================================================
+        const GLOBAL_SUGGESTIONS = [
+            { icon: '📊', label: 'Summarize all services', message: 'Give me a full summary of all my LaunchAgents - counts, status breakdown, namespaces.' },
+            { icon: '📈', label: 'Service statistics', message: 'Show me detailed statistics: running, stopped, loaded counts per namespace.' },
+            { icon: '🚀', label: 'Start all KeepAlive', message: 'Start all stopped KeepAlive agents.' },
+            { icon: '🔍', label: 'Find failing services', message: 'List any agents that have errors in their stderr logs.' },
+            { icon: '📝', label: 'List scheduled agents', message: 'Show all scheduled agents with their cron times.' },
+            { icon: '➕', label: 'Create new agent', message: 'I want to create a new LaunchAgent. Guide me through the setup.' },
+            { icon: '🏷️', label: 'List namespaces', message: 'Show all namespaces and how many agents are in each.' },
+        ];
+
+        const SERVICE_SUGGESTIONS = [
+            { icon: 'ℹ️', label: 'Summarize', message: 'Summarize this service: show label, status, schedule, script, and recent logs.' },
+            { icon: '📅', label: 'Change schedule', message: 'Change the schedule for this service.' },
+            { icon: '✏️', label: 'Rename', message: 'Rename this agent.' },
+            { icon: '🔄', label: 'Change script', message: 'Change the script/command path for this service.' },
+            { icon: '📂', label: 'Change working dir', message: 'Change the working directory for this service.' },
+            { icon: '🌍', label: 'Edit env vars', message: 'Edit the environment variables for this service.' },
+            { icon: '▶️', label: 'Start', message: 'Start this service.' },
+            { icon: '⏹️', label: 'Stop', message: 'Stop this service.' },
+            { icon: '🔁', label: 'Restart', message: 'Restart this service.' },
+            { icon: '📥', label: 'Load', message: 'Load this service into launchd.' },
+            { icon: '📤', label: 'Unload', message: 'Unload this service from launchd.' },
+            { icon: '📄', label: 'Show plist', message: 'Show the raw plist XML for this service.' },
+            { icon: '📋', label: 'Show stdout', message: 'Show recent stdout logs for this service.' },
+            { icon: '🚨', label: 'Show stderr', message: 'Show recent stderr logs for this service.' },
+            { icon: '🗑️', label: 'Delete', message: 'Delete this agent.' },
+            { icon: '🔀', label: 'Convert type', message: 'Convert this agent between KeepAlive and Scheduled.' },
+        ];
+
+        function updateChatSuggestions() {
+            const container = document.getElementById('chat-suggestions');
+            const suggestions = currentServiceId && currentServiceId !== 'new'
+                ? SERVICE_SUGGESTIONS
+                : GLOBAL_SUGGESTIONS;
+
+            container.innerHTML = suggestions.map(s =>
+                `<button class="suggestion-chip" onclick="sendSuggestion('${escapeHtml(s.message.replace(/'/g, "\\'"))}')">${s.icon} ${escapeHtml(s.label)}</button>`
+            ).join('');
+        }
+
+        function sendSuggestion(message) {
+            document.getElementById('chat-input').value = message;
+            sendChatMessage();
+        }
+
+        // ===================================================================
+        // Chat Messaging
+        // ===================================================================
+        async function sendChatMessage() {
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            if (!message) return;
+
+            input.value = '';
+            autoResizeChatInput(input);
+            input.disabled = true;
+            document.getElementById('chat-send').disabled = true;
+
+            // Add user message to UI
+            appendChatMessage('user', message);
+
+            // Show loading
+            const loadingId = showChatLoading();
+
+            try {
+                const resp = await fetch('/api/chat/send', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': getCSRFToken(),
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        service_id: currentServiceId || '',
+                        session_id: chatSessionId,
+                    }),
+                });
+
+                const data = await readJsonResponse(resp);
+
+                // Update session
+                if (data.session_id) {
+                    chatSessionId = data.session_id;
+                    localStorage.setItem('mam-chat-session', chatSessionId);
+                    refreshChatSessionList(chatSessionId);
+                }
+
+                // Remove loading
+                removeChatLoading(loadingId);
+
+                // Check for error
+                if (data.error === 'ollama_unavailable') {
+                    appendChatMessage('assistant', data.response, null, true);
+                    checkOllamaHealth();
+                } else if (data.requires_confirmation && data.action) {
+                    // Show response + action confirmation buttons
+                    chatPendingAction = data.action;
+                    appendChatMessage('assistant', data.response, data.action);
+                } else {
+                    appendChatMessage('assistant', data.response);
+                }
+
+                // Update Ollama status on first successful response
+                if (!data.error) {
+                    const dot = document.getElementById('chat-status-dot');
+                    const stext = document.getElementById('chat-status-text');
+                    dot.className = 'chat-status-dot connected';
+                    stext.textContent = 'Connected';
+                    chatOllamaReady = true;
+                }
+
+            } catch (err) {
+                removeChatLoading(loadingId);
+                appendChatMessage('assistant', err.message || 'Failed to get a response. Please try again.', null, true);
+                console.error('Chat error:', err);
+            }
+
+            input.disabled = false;
+            document.getElementById('chat-send').disabled = false;
+            input.focus();
+        }
+
+        function initChatInput() {
+            const input = document.getElementById('chat-input');
+            if (!input) return;
+            input.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter') return;
+                // Cmd/Ctrl+Enter should insert newline, not send.
+                if (event.metaKey || event.ctrlKey) {
+                    return;
+                }
+                // Shift+Enter inserts newline.
+                if (event.shiftKey) {
+                    return;
+                }
+                event.preventDefault();
+                sendChatMessage();
+            });
+            input.addEventListener('input', () => autoResizeChatInput(input));
+            autoResizeChatInput(input);
+        }
+
+        function autoResizeChatInput(input) {
+            if (!input) return;
+            input.style.height = 'auto';
+            const maxHeight = 140;
+            input.style.height = `${Math.min(input.scrollHeight, maxHeight)}px`;
+        }
+
+        function resetChatMessages() {
+            const container = document.getElementById('chat-messages');
+            if (container) container.innerHTML = CHAT_WELCOME_HTML;
+        }
+
+        async function refreshChatSessionList(selectedSessionId = '') {
+            const select = document.getElementById('chat-session-select');
+            if (!select) return;
+
+            const selected = selectedSessionId || chatSessionId || '';
+            const previous = select.value;
+            const preferred = selected || previous || '';
+
+            select.innerHTML = '<option value="">Current session</option>';
+            try {
+                const sessionsResp = await fetch('/api/chat/sessions');
+                if (!sessionsResp.ok) return;
+                const sessionsData = await sessionsResp.json();
+                const sessions = Array.isArray(sessionsData.sessions) ? sessionsData.sessions : [];
+                sessions.forEach(session => {
+                    const option = document.createElement('option');
+                    option.value = session.session_id || '';
+                    const count = Number(session.message_count || 0);
+                    option.textContent = `${session.session_id || 'unknown'} (${count})`;
+                    select.appendChild(option);
+                });
+            } catch (_) {
+                return;
+            }
+
+            if (preferred) {
+                select.value = preferred;
+            }
+        }
+
+        async function startNewChat() {
+            chatPendingAction = null;
+            chatSessionId = '';
+            localStorage.removeItem('mam-chat-session');
+            resetChatMessages();
+            await refreshChatSessionList('');
+        }
+
+        async function onChatSessionSelected(sessionId) {
+            if (!sessionId) {
+                await startNewChat();
+                return;
+            }
+            await restoreChatSession(sessionId, { fallbackToLatest: false });
+        }
+
+        async function restoreChatSession(sessionIdOverride = '', options = {}) {
+            const container = document.getElementById('chat-messages');
+            if (!container) return;
+            const fallbackToLatest = options.fallbackToLatest !== false;
+
+            let sessionToLoad = sessionIdOverride || chatSessionId;
+            if (!sessionToLoad && fallbackToLatest) {
+                try {
+                    const sessionsResp = await fetch('/api/chat/sessions');
+                    if (sessionsResp.ok) {
+                        const sessionsData = await sessionsResp.json();
+                        const sessions = Array.isArray(sessionsData.sessions) ? sessionsData.sessions : [];
+                        const latest = sessions.find(s => (s.message_count || 0) > 0) || sessions[0];
+                        if (latest && latest.session_id) {
+                            sessionToLoad = latest.session_id;
+                        }
+                    }
+                } catch (_) {
+                    return;
+                }
+            }
+
+            if (!sessionToLoad) {
+                resetChatMessages();
+                await refreshChatSessionList('');
+                return;
+            }
+
+            try {
+                const historyResp = await fetch(`/api/chat/history?session_id=${encodeURIComponent(sessionToLoad)}`);
+                if (!historyResp.ok) {
+                    if (sessionIdOverride) {
+                        await startNewChat();
+                    }
+                    return;
+                }
+
+                const historyData = await historyResp.json();
+                const messages = Array.isArray(historyData.messages) ? historyData.messages : [];
+                if (messages.length === 0) {
+                    resetChatMessages();
+                    chatSessionId = sessionToLoad;
+                    localStorage.setItem('mam-chat-session', chatSessionId);
+                    await refreshChatSessionList(chatSessionId);
+                    return;
+                }
+
+                // Replace the welcome message with restored history.
+                container.innerHTML = '';
+                chatPendingAction = null;
+                for (const m of messages) {
+                    const role = m.role === 'user' ? 'user' : 'assistant';
+                    // Restored messages are read-only; do not revive old pending actions.
+                    appendChatMessage(role, m.content || '', null);
+                }
+
+                chatSessionId = sessionToLoad;
+                localStorage.setItem('mam-chat-session', chatSessionId);
+                await refreshChatSessionList(chatSessionId);
+            } catch (err) {
+                console.error('Error restoring chat session:', err);
+            }
+        }
+
+        function appendChatMessage(role, content, action, isError) {
+            const container = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            div.className = `chat-message ${role}`;
+
+            const avatar = role === 'user' ? '👤' : '🤖';
+            let bubbleClass = 'chat-bubble';
+            if (isError) bubbleClass += ' chat-error';
+
+            // Format content: basic markdown-like rendering
+            let formatted = escapeHtml(content)
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\n/g, '<br>');
+
+            let actionHtml = '';
+            if (action) {
+                actionHtml = `
+                    <div class="chat-action-buttons">
+                        <button class="btn-chat-apply" onclick="confirmChatAction()">✅ Apply</button>
+                        <button class="btn-chat-cancel" onclick="cancelChatAction(this)">❌ Cancel</button>
+                    </div>
+                `;
+            }
+
+            div.innerHTML = `
+                <span class="chat-avatar">${avatar}</span>
+                <div class="${bubbleClass}">
+                    ${formatted}
+                    ${actionHtml}
+                </div>
+            `;
+
+            container.appendChild(div);
+            scrollChatToBottom();
+        }
+
+        function showChatLoading() {
+            const container = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            const id = 'loading-' + Date.now();
+            div.id = id;
+            div.className = 'chat-message assistant';
+            div.innerHTML = `
+                <span class="chat-avatar">🤖</span>
+                <div class="chat-bubble chat-loading">
+                    <span class="loading-dots">
+                        <span>.</span><span>.</span><span>.</span>
+                    </span>
+                    Thinking...
+                </div>
+            `;
+            container.appendChild(div);
+            scrollChatToBottom();
+            return id;
+        }
+
+        function removeChatLoading(loadingId) {
+            const el = document.getElementById(loadingId);
+            if (el) el.remove();
+        }
+
+        function scrollChatToBottom() {
+            const container = document.getElementById('chat-messages');
+            // Use setTimeout to ensure DOM is updated
+            setTimeout(() => {
+                container.scrollTop = container.scrollHeight;
+            }, 50);
+        }
+
+        // ===================================================================
+        // Chat Action Confirmation
+        // ===================================================================
+        async function confirmChatAction() {
+            if (!chatPendingAction) return;
+
+            const action = chatPendingAction;
+            chatPendingAction = null;
+
+            // Disable all action buttons
+            document.querySelectorAll('.chat-action-buttons').forEach(el => {
+                el.innerHTML = '<span class="chat-action-pending">⏳ Applying...</span>';
+            });
+
+            try {
+                const resp = await fetch('/api/chat/confirm', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': getCSRFToken(),
+                    },
+                    body: JSON.stringify({
+                        session_id: chatSessionId,
+                        action: action,
+                    }),
+                });
+
+                const result = await readJsonResponse(resp);
+
+                if (result.success) {
+                    appendChatMessage('assistant', `✅ ${result.message}`);
+                    // Refresh the tree and service data
+                    await loadServicesTree();
+                    if (currentServiceId && currentServiceId !== 'new') {
+                        // If service was renamed or deleted, update accordingly
+                        if (result.service_id) {
+                            currentServiceId = result.service_id;
+                        }
+                        if (action.action !== 'delete') {
+                            try { await loadService(currentServiceId, { silentInChat: true }); } catch (_) {}
+                        } else {
+                            currentServiceId = null;
+                            currentServiceData = null;
+                            updateChatSuggestions();
+                        }
+                    }
+                } else {
+                    appendChatMessage('assistant', `❌ Failed: ${result.message}`, null, true);
+                }
+
+            } catch (err) {
+                appendChatMessage('assistant', `❌ ${err.message || 'Failed to execute action. Please try again.'}`, null, true);
+                console.error('Confirm error:', err);
+            }
+
+            // Clean up any remaining action buttons
+            document.querySelectorAll('.chat-action-buttons, .chat-action-pending').forEach(el => el.remove());
+        }
+
+        function cancelChatAction(btn) {
+            chatPendingAction = null;
+            // Remove the action buttons from the message
+            const buttonsDiv = btn.parentElement;
+            buttonsDiv.innerHTML = '<span class="chat-action-cancelled">❌ Cancelled</span>';
+            appendChatMessage('assistant', 'Action cancelled. What would you like to do instead?');
+        }
+
+        // ===================================================================
+        // Services Tree
+        // ===================================================================
+        async function loadServicesTree() {
+            try {
+                const response = await fetch('/api/services');
+                servicesTree = await response.json();
+                renderTree();
+            } catch (error) {
+                console.error('Error loading services:', error);
+                showFlashMessage('Error loading services', 'error');
+            }
+        }
+
+        // Render the tree view
+        function renderTree() {
+            const container = document.getElementById('agents-tree');
+            
+            if (!servicesTree || (!servicesTree.scheduled && !servicesTree.keepalive)) {
+                container.innerHTML = '<div style="padding: 10px; color: var(--text-muted);">No services</div>';
+                return;
+            }
+
+            let html = '';
+            
+            // Render Scheduled section
+            html += renderScheduleTypeSection('Scheduled', servicesTree.scheduled);
+            
+            // Render KeepAlive section
+            html += renderScheduleTypeSection('KeepAlive', servicesTree.keepalive);
+            
+            container.innerHTML = html;
+        }
+
+        function renderScheduleTypeSection(scheduleType, namespaces) {
+            if (!namespaces || Object.keys(namespaces).length === 0) {
+                return '';
+            }
+
+            let html = `
+                <div class="tree-namespace">
+                    <div class="namespace-title expanded" onclick="toggleNamespace(this)">
+                        ${escapeHtml(scheduleType)}
+                    </div>
+                    <div class="namespace-services show">
+            `;
+            
+            // Render namespaces within this schedule type
+            for (const [namespace, services] of Object.entries(namespaces)) {
+                html += `
+                    <div class="tree-namespace" style="padding-left: 15px;">
+                        <div class="namespace-title expanded" onclick="toggleNamespace(this)">
+                            ${escapeHtml(namespace)}
+                        </div>
+                        <div class="namespace-services show">
+                `;
+                
+                services.forEach(service => {
+                    const state = service.status.state
+                        || (service.status.running ? 'running'
+                            : service.status.idle ? 'idle'
+                            : service.status.loaded ? 'stopped'
+                            : 'notloaded');
+                    const statusClass = 'status-' + state;
+                    
+                    const safeId = escapeHtml(service.service_id);
+                    const safeName = escapeHtml(service.name);
+                    const portDisplay = service.port ? ` <span class="port-badge">:${escapeHtml(String(service.port))}</span>` : '';
+                    
+                    html += `
+                        <div class="service-item ${statusClass}" 
+                             data-service-id="${safeId}"
+                             onclick="loadService(this.dataset.serviceId)">
+                            ${safeName}${portDisplay}
+                        </div>
+                    `;
+                });
+                
+                html += `
+                        </div>
+                    </div>
+                `;
+            }
+            
+            html += `
+                    </div>
+                </div>
+            `;
+            
+            return html;
+        }
+
+        // Toggle tree section
+        function toggleSection(element) {
+            element.classList.toggle('expanded');
+            element.nextElementSibling.classList.toggle('show');
+        }
+
+        // Toggle namespace
+        function toggleNamespace(element) {
+            element.classList.toggle('expanded');
+            element.nextElementSibling.classList.toggle('show');
+        }
+
+        // Load service details
+        async function loadService(serviceId, options = {}) {
+            const silentInChat = Boolean(options.silentInChat);
+            try {
+                const response = await fetch(`/api/service/${serviceId}`);
+                currentServiceData = await response.json();
+                currentServiceId = serviceId;
+                localStorage.setItem('mam-selected-service', serviceId);
+                updateIdeActionsVisibility();
+                
+                // Update selected state in tree
+                document.querySelectorAll('.service-item').forEach(el => {
+                    el.classList.remove('selected');
+                });
+                const el = document.querySelector(`[data-service-id="${CSS.escape(serviceId)}"]`);
+                if (el) el.classList.add('selected');
+                
+                // Update editor title
+                const editorTitle = document.getElementById('editor-title');
+                if (editorTitle && currentServiceData) {
+                    editorTitle.textContent = currentServiceData.name || 'Service Editor';
+                }
+
+                if (currentMode === 'ide') {
+                    // Render IDE view
+                    renderEditor();
+                    populateForm();
+                    updatePlistPreview();
+                    updateLogs();
+                } else {
+                    // Update chat suggestions for the selected service
+                    updateChatSuggestions();
+                    // Notify in chat
+                    if (!silentInChat) {
+                        const label = currentServiceData.label || serviceId;
+                        appendChatMessage('assistant', `Now viewing: <strong>${escapeHtml(label)}</strong>. I can help with this service — check the suggested actions above.`);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading service:', error);
+                showFlashMessage('Error loading service', 'error');
+            }
+        }
+
+        // Render editor form
+        function renderEditor() {
+            const editorTop = document.getElementById('editor-top');
+            const template = document.getElementById('editor-template').textContent;
+            editorTop.innerHTML = template;
+            
+            // Show editor header
+            const editorHeader = document.getElementById('editor-header');
+            if (editorHeader) {
+                editorHeader.style.display = 'flex';
+            }
+            
+            // Update header title
+            const editorTitle = document.getElementById('editor-title');
+            if (editorTitle && currentServiceData) {
+                editorTitle.textContent = currentServiceData.name || 'New Agent';
+            }
+            
+            // Update button visibility based on schedule type
+            updateButtonVisibility();
+        }
+        
+        // Update button visibility based on service schedule type
+        function updateButtonVisibility() {
+            const runOnceBtn = document.getElementById('btn-runonce-header');
+            const portLinkBtn = document.getElementById('btn-port-link');
+            const unloadBtn = document.getElementById('btn-unload-header');
+            const loadBtn = document.getElementById('btn-load-header');
+            
+            if (!currentServiceData) return;
+            
+            // Show "Run Once" button only for timer-driven agents
+            if (runOnceBtn) {
+                if (isTimerScheduleType(currentServiceData.schedule_type)) {
+                    runOnceBtn.style.display = 'inline-block';
+                } else {
+                    runOnceBtn.style.display = 'none';
+                }
+            }
+            
+            if (portLinkBtn) {
+                const port = Number(currentServiceData.port);
+                if (currentServiceData.schedule_type === 'keepalive' && port && Number.isInteger(port)) {
+                    portLinkBtn.href = `http://localhost:${port}`;
+                    portLinkBtn.textContent = `http://localhost:${port}`;
+                    portLinkBtn.style.display = 'inline-block';
+                } else {
+                    portLinkBtn.style.display = 'none';
+                }
+            }
+
+            // Hide unload/load buttons for the self agent to avoid orphaning
+            const isSelf = currentServiceData.label === 'user.productivity.mac_agents_manager';
+            if (unloadBtn) {
+                unloadBtn.style.display = isSelf ? 'none' : 'inline-block';
+            }
+            if (loadBtn) {
+                loadBtn.style.display = isSelf ? 'none' : 'inline-block';
+            }
+            updateIdeActionsVisibility();
+        }
+
+        // Populate form with agent data
+        function populateForm() {
+            if (!currentServiceData) return;
+            
+            document.getElementById('service_label').value = currentServiceData.label || '';
+            document.getElementById('service_name').value = currentServiceData.name || '';
+            document.getElementById('service_category').value = currentServiceData.namespace || currentServiceData.category || '';
+            document.getElementById('script_path').value = currentServiceData.program || '';
+            document.getElementById('working_directory').value = currentServiceData.working_directory || '';
+            
+            // Update header title
+            const editorTitle = document.getElementById('editor-title');
+            if (editorTitle) {
+                editorTitle.textContent = currentServiceData.name || 'New Agent';
+            }
+            
+            // Show/hide schedule section based on schedule type
+            const scheduleType = currentServiceData.schedule_type;
+            const scheduleSection = document.getElementById('schedule-section');
+            if (scheduleType === 'scheduled') {
+                scheduleSection.classList.remove('hidden');
+            } else {
+                scheduleSection.classList.add('hidden');
+            }
+            
+            // Schedule times
+            if (currentServiceData.schedule_times && currentServiceData.schedule_times.length > 0) {
+                const container = document.getElementById('schedule-times');
+                container.innerHTML = '';
+                timeSlotCount = currentServiceData.schedule_times.length;
+                
+                currentServiceData.schedule_times.forEach((time, index) => {
+                    const safeHour = Number.isInteger(Number(time.Hour)) ? Number(time.Hour) : 0;
+                    const safeMinute = Number.isInteger(Number(time.Minute)) ? Number(time.Minute) : 0;
+                    const removeBtn = index > 0 ? '<button type="button" class="btn-remove-time" onclick="removeTimeSlot(this)">Remove</button>' : '';
+                    container.innerHTML += `
+                        <div class="time-slot">
+                            <label>Hour:</label>
+                            <input type="number" name="schedule_hour_${index}" min="0" max="23" value="${safeHour}">
+                            <label>Minute:</label>
+                            <input type="number" name="schedule_minute_${index}" min="0" max="59" value="${safeMinute}">
+                            ${removeBtn}
+                        </div>
+                    `;
+                });
+            }
+            
+            // Environment variables
+            if (currentServiceData.environment) {
+                let envText = '';
+                for (const [key, value] of Object.entries(currentServiceData.environment)) {
+                    envText += `${key}=${value}\n`;
+                }
+                document.getElementById('environment').value = envText;
+            }
+            
+            // Listen for form changes to update plist preview
+            document.getElementById('service-form').addEventListener('input', updatePlistPreview);
+            document.getElementById('service-form').addEventListener('change', updatePlistPreview);
+            
+            // Update button visibility
+            updateButtonVisibility();
+        }
+        
+        // Add time slot
+        function addTimeSlot() {
+            const container = document.getElementById('schedule-times');
+            const div = document.createElement('div');
+            div.className = 'time-slot';
+            div.innerHTML = `
+                <label>Hour:</label>
+                <input type="number" name="schedule_hour_${timeSlotCount}" min="0" max="23" value="14">
+                <label>Minute:</label>
+                <input type="number" name="schedule_minute_${timeSlotCount}" min="0" max="59" value="0">
+                <button type="button" class="btn-remove-time" onclick="removeTimeSlot(this)">Remove</button>
+            `;
+            container.appendChild(div);
+            timeSlotCount++;
+            updatePlistPreview();
+        }
+        
+        // Remove time slot
+        function removeTimeSlot(button) {
+            button.parentElement.remove();
+            updatePlistPreview();
+        }
+        
+        // Update plist preview
+        function updatePlistPreview() {
+            if (currentServiceData && currentServiceData.plist_xml) {
+                document.querySelector('#panel-plist pre').textContent = currentServiceData.plist_xml;
+            }
+        }
+        
+        // Update logs
+        async function updateLogs() {
+            if (!currentServiceId || currentServiceId === 'new') return;
+            
+            try {
+                const response = await fetch(`/api/service/${currentServiceId}`);
+                const serviceData = await response.json();
+                
+                const stdoutPre = document.querySelector('#panel-stdout pre');
+                const stderrPre = document.querySelector('#panel-stderr pre');
+                
+                if (serviceData.logs && serviceData.logs.stdout) {
+                    stdoutPre.textContent = serviceData.logs.stdout;
+                    stdoutPre.classList.remove('log-empty');
+                } else {
+                    stdoutPre.textContent = 'No stdout logs available';
+                    stdoutPre.classList.add('log-empty');
+                }
+                
+                if (serviceData.logs && serviceData.logs.stderr) {
+                    stderrPre.textContent = serviceData.logs.stderr;
+                    stderrPre.classList.remove('log-empty');
+                } else {
+                    stderrPre.textContent = 'No stderr logs available';
+                    stderrPre.classList.add('log-empty');
+                }
+            } catch (error) {
+                console.error('Error updating logs:', error);
+            }
+        }
+        
+        function switchPanel(type, evt) {
+            document.querySelectorAll('.panel-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            if (evt && evt.target) evt.target.classList.add('active');
+
+            const validPanels = ['plist', 'stdout', 'stderr'];
+            if (!validPanels.includes(type)) return;
+            document.getElementById('panel-plist').classList.add('hidden');
+            document.getElementById('panel-stdout').classList.add('hidden');
+            document.getElementById('panel-stderr').classList.add('hidden');
+            document.getElementById(`panel-${type}`).classList.remove('hidden');
+        }
+
+        // Create new agent
+        async function createNewService(scheduleType) {
+            currentServiceId = 'new';
+            localStorage.removeItem('mam-selected-service');
+            
+            // Switch to IDE mode for creation
+            switchMode('ide');
+            
+            // Fetch default environment variables from backend
+            let defaultEnv = {};
+            try {
+                const response = await fetch('/api/default-env');
+                defaultEnv = await response.json();
+            } catch (error) {
+                console.error('Error fetching default env:', error);
+                defaultEnv = {
+                    'HOME': '/Users/user',
+                    'PATH': '/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin',
+                    'USER': 'user'
+                };
+            }
+            
+            currentServiceData = {
+                service_type: 'agent',
+                name: '',
+                label: '',
+                category: '',
+                program: '',
+                schedule_type: scheduleType,
+                schedule_times: scheduleType === 'scheduled' ? [{'Hour': 10, 'Minute': 0}] : [],
+                working_directory: '',
+                environment: defaultEnv,
+                plist_xml: ''
+            };
+            
+            // Clear selection
+            document.querySelectorAll('.service-item').forEach(el => {
+                el.classList.remove('selected');
+            });
+            
+            renderEditor();
+            populateForm();
+            updateIdeActionsVisibility();
+            
+            // Add event listeners for auto-generating label
+            const nameField = document.getElementById('service_name');
+            const categoryField = document.getElementById('service_category');
+            const labelField = document.getElementById('service_label');
+            
+            function updateLabel() {
+                const name = nameField.value.trim();
+                const category = categoryField.value.trim();
+                if (name && category) {
+                    labelField.value = `user.${category}.${name}`;
+                }
+            }
+            
+            nameField.addEventListener('input', updateLabel);
+            categoryField.addEventListener('input', updateLabel);
+            
+            // Focus on name field
+            document.getElementById('service_name').focus();
+        }
+        
+        // Save service from form submission
+        async function saveService(event) {
+            event.preventDefault();
+            return await performSave(new FormData(event.target));
+        }
+        
+        // Save service from header button
+        async function saveServiceFromHeader() {
+            const form = document.getElementById('service-form');
+            if (!form) return;
+            return await performSave(new FormData(form));
+        }
+        
+        // Perform save operation
+        async function performSave(formData) {
+            const data = Object.fromEntries(formData.entries());
+            
+            if (currentServiceData) {
+                data.schedule_type = currentServiceData.schedule_type;
+            }
+            
+            try {
+                const response = await fetch(`/api/save/${currentServiceId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': getCSRFToken()
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await readJsonResponse(response);
+                
+                if (result.success) {
+                    showFlashMessage(result.message, 'success');
+                    await loadServicesTree();
+                    if (currentServiceId === 'new' && result.service_id) {
+                        await loadService(result.service_id);
+                    } else {
+                        await loadService(currentServiceId);
+                    }
+                    updatePlistPreview();
+                } else {
+                    showFlashMessage(result.message, 'error');
+                }
+            } catch (error) {
+                console.error('Error saving service:', error);
+                showFlashMessage(error.message || 'Error saving service', 'error');
+            }
+            
+            return false;
+        }
+        
+        // Control actions
+        async function controlAction(action) {
+            if (!currentServiceId || currentServiceId === 'new') {
+                showFlashMessage('Please save the agent first', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/control/${currentServiceId}/${action}`, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-Token': getCSRFToken()
+                    }
+                });
+                
+                const result = await readJsonResponse(response);
+                
+                if (result.success) {
+                    showFlashMessage(result.message, 'success');
+                    await loadService(currentServiceId);
+                    await loadServicesTree();
+                    
+                    if (action === 'load' || action === 'start') {
+                        setTimeout(() => { updateLogs(); }, 1000);
+                    }
+                } else {
+                    showFlashMessage(result.message, 'error');
+                }
+            } catch (error) {
+                console.error('Error controlling service:', error);
+                showFlashMessage(error.message || 'Error controlling service', 'error');
+            }
+        }
+        
+        // Run Once - for scheduled agents
+        async function runOnce() {
+            if (!currentServiceId || currentServiceId === 'new') {
+                showFlashMessage('Please save the agent first', 'error');
+                return;
+            }
+            
+            if (!currentServiceData || !isTimerScheduleType(currentServiceData.schedule_type)) {
+                showFlashMessage('Run Once is only available for scheduled agents', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/control/${currentServiceId}/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-Token': getCSRFToken()
+                    }
+                });
+                
+                const result = await readJsonResponse(response);
+                
+                if (result.success) {
+                    showFlashMessage('Agent executed once successfully', 'success');
+                    await loadService(currentServiceId);
+                    await loadServicesTree();
+                    setTimeout(() => { updateLogs(); }, 1000);
+                } else {
+                    showFlashMessage(result.message, 'error');
+                }
+            } catch (error) {
+                console.error('Error running service:', error);
+                showFlashMessage(error.message || 'Error running service', 'error');
+            }
+        }
+        
+        // Reload agent
+        async function reloadAgent() {
+            if (!currentServiceId || currentServiceId === 'new') {
+                showFlashMessage('Please save the agent first', 'error');
+                return;
+            }
+            
+            try {
+                if (currentServiceId === 'agent:user.productivity.mac_agents_manager') {
+                    try {
+                        fetch(`/control/${currentServiceId}/restart`, {
+                            method: 'POST',
+                            headers: { 'Accept': 'application/json', 'X-CSRF-Token': getCSRFToken() },
+                            keepalive: true
+                        }).catch(() => {});
+                    } catch (_) {}
+                    showFlashMessage('Restarting Mac Agents Manager...', 'info');
+                    setTimeout(() => { window.location.reload(); }, 1500);
+                    return;
+                }
+
+                const unloadResult = await readJsonResponse(await fetch(`/control/${currentServiceId}/unload`, {
+                    method: 'POST',
+                    headers: { 'Accept': 'application/json', 'X-CSRF-Token': getCSRFToken() }
+                }));
+                if (!unloadResult.success) {
+                    showFlashMessage(`Unload failed: ${unloadResult.message}`, 'error');
+                    return;
+                }
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                // Past this point the agent is unloaded, so any failure has to
+                // say so rather than leaving the user thinking nothing changed.
+                let loadResult;
+                try {
+                    loadResult = await readJsonResponse(await fetch(`/control/${currentServiceId}/load`, {
+                        method: 'POST',
+                        headers: { 'Accept': 'application/json', 'X-CSRF-Token': getCSRFToken() }
+                    }));
+                } catch (error) {
+                    console.error('Error reloading agent:', error);
+                    showFlashMessage(`Agent is now unloaded and could not be loaded back: ${error.message}`, 'error');
+                    await loadServicesTree();
+                    return;
+                }
+
+                if (loadResult.success) {
+                    showFlashMessage('Agent reloaded successfully', 'success');
+                    await loadService(currentServiceId);
+                    await loadServicesTree();
+                    setTimeout(() => { updateLogs(); }, 1000);
+                } else {
+                    showFlashMessage(`Agent is now unloaded and could not be loaded back: ${loadResult.message}`, 'error');
+                    await loadServicesTree();
+                }
+            } catch (error) {
+                console.error('Error reloading agent:', error);
+                showFlashMessage(error.message || 'Error reloading agent', 'error');
+            }
+        }
+        
+        // Delete service
+        async function deleteService() {
+            if (!currentServiceId || currentServiceId === 'new') return;
+            
+            if (!confirm('Are you sure you want to delete this service? This action cannot be undone.')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/delete/${currentServiceId}`, {
+                    method: 'POST',
+                    headers: { 'X-CSRF-Token': getCSRFToken() }
+                });
+                
+                if (response.ok) {
+                    showFlashMessage('Agent deleted successfully', 'success');
+                    document.getElementById('editor-top').innerHTML = '<div class="welcome"><h2>Welcome to Mac Agents Manager</h2><p>Select an agent from the sidebar to edit, or create a new one.</p></div>';
+                    document.querySelector('#panel-plist pre').textContent = 'No agent selected';
+                    
+                    const editorTitle = document.getElementById('editor-title');
+                    if (editorTitle) editorTitle.textContent = 'Mac Agents Manager';
+                    
+                    currentServiceId = null;
+                    currentServiceData = null;
+                    localStorage.removeItem('mam-selected-service');
+                    updateIdeActionsVisibility();
+                    
+                    // Update chat suggestions if in chat mode
+                    if (currentMode === 'chat') {
+                        updateChatSuggestions();
+                    }
+                    
+                    await loadServicesTree();
+                } else {
+                    let message = 'Error deleting service';
+                    try {
+                        await readJsonResponse(response);
+                    } catch (error) {
+                        message = error.message || message;
+                    }
+                    showFlashMessage(message, 'error');
+                }
+            } catch (error) {
+                console.error('Error deleting service:', error);
+                showFlashMessage('Error deleting service', 'error');
+            }
+        }
+        
+        // Show sudo modal
+        function showSudoModal(message, command) {
+            document.getElementById('modalMessage').textContent = message;
+            document.getElementById('sudoCommand').textContent = command;
+            document.getElementById('sudoModal').classList.add('show');
+        }
+        
+        // Close modal
+        function closeModal() {
+            document.getElementById('sudoModal').classList.remove('show');
+        }
+        
+        // Copy command
+        function copyCommand() {
+            const command = document.getElementById('sudoCommand').textContent;
+            navigator.clipboard.writeText(command).then(() => {
+                showFlashMessage('Command copied to clipboard!', 'success');
+            });
+        }
+        
+        // Bulk actions touch many agents at once, and a single count cannot say
+        // which ones worked. Keep the whole per-agent report on screen until it
+        // is dismissed, failures first, rather than flashing it past the user.
+        let lastBulkReportText = '';
+
+        function showBulkResultReport(title, data) {
+            const results = Array.isArray(data.results) ? data.results : [];
+            const skipped = Array.isArray(data.skipped) ? data.skipped : [];
+            const succeeded = results.filter(r => r.success);
+            const failed = results.filter(r => !r.success);
+
+            document.getElementById('bulkResultTitle').textContent = title;
+
+            let summary = failed.length
+                ? `${succeeded.length} succeeded, ${failed.length} failed — out of ${results.length} attempted`
+                : `All ${succeeded.length} succeeded`;
+            if (skipped.length) {
+                summary += `, ${skipped.length} skipped`;
+            }
+            const summaryEl = document.getElementById('bulkResultSummary');
+            summaryEl.textContent = summary;
+            summaryEl.className = `bulk-summary ${failed.length ? 'bad' : 'ok'}`;
+
+            // Failures first: they are the only rows that need acting on.
+            const ordered = failed.map(r => ['bad', '✗', r])
+                .concat(skipped.map(r => ['skipped', '–', r]))
+                .concat(succeeded.map(r => ['ok', '✓', r]));
+
+            document.getElementById('bulkResultList').innerHTML = ordered.map(([tone, icon, result]) => `
+                <div class="bulk-result-row ${tone}">
+                    <span class="bulk-result-icon">${icon}</span>
+                    <div class="bulk-result-text">
+                        <div class="bulk-result-name">${escapeHtml(result.name || result.label || 'unknown')}</div>
+                        <div class="bulk-result-label">${escapeHtml(result.label || '')}</div>
+                        <div class="bulk-result-detail">${escapeHtml(result.message || '')}</div>
+                    </div>
+                </div>
+            `).join('');
+
+            const tags = { bad: '[FAIL]', skipped: '[skip]', ok: '[ok]  ' };
+            lastBulkReportText = [`${title} — ${summary}`, ''].concat(
+                ordered.map(([tone, , result]) =>
+                    `${tags[tone]} ${result.label || result.name}: ${result.message || ''}`
+                )
+            ).join('\n');
+
+            document.getElementById('bulkResultModal').classList.add('show');
+        }
+
+        function closeBulkResultModal() {
+            document.getElementById('bulkResultModal').classList.remove('show');
+        }
+
+        function copyBulkResult() {
+            navigator.clipboard.writeText(lastBulkReportText).then(() => {
+                showFlashMessage('Report copied to clipboard!', 'success');
+            });
+        }
+
+        // Show flash message
+        function showFlashMessage(message, type) {
+            const flash = document.createElement('div');
+            flash.className = `flash-message ${type}`;
+            flash.textContent = message;
+            document.body.appendChild(flash);
+            
+            setTimeout(() => {
+                flash.remove();
+            }, 3000);
+        }
+        
+        // Start all KeepAlive agents
+        async function startAllKeepAlive() {
+            if (!confirm('Start all KeepAlive agents that are currently stopped?')) {
+                return;
+            }
+            showFlashMessage('Starting KeepAlive agents...', 'info');
+            try {
+                const response = await fetch('/api/start-all-keepalive', {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-Token': getCSRFToken()
+                    }
+                });
+                const data = await readJsonResponse(response);
+                if (!data.attempted_count) {
+                    showFlashMessage('All KeepAlive agents are already running!', 'success');
+                    return;
+                }
+
+                showBulkResultReport('Start All KeepAlive', data);
+                await loadServicesTree();
+                if (currentServiceId) {
+                    await loadService(currentServiceId);
+                }
+            } catch (error) {
+                console.error('Error starting services:', error);
+                showFlashMessage(error.message || 'Error starting services', 'error');
+            }
+        }
+
+        // Restart currently running KeepAlive agents
+        async function restartRunningKeepAlive() {
+            if (!confirm('Restart all KeepAlive agents that are currently running?')) {
+                return;
+            }
+            showFlashMessage('Restarting running KeepAlive agents...', 'info');
+            try {
+                const response = await fetch('/api/restart-running-keepalive', {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-Token': getCSRFToken()
+                    }
+                });
+                const data = await readJsonResponse(response);
+                if (!data.attempted_count && !(data.skipped || []).length) {
+                    showFlashMessage('No running KeepAlive agents found.', 'success');
+                    return;
+                }
+
+                showBulkResultReport('Restart Running KeepAlive', data);
+                await loadServicesTree();
+                if (currentServiceId) {
+                    await loadService(currentServiceId);
+                }
+            } catch (error) {
+                console.error('Error restarting services:', error);
+                showFlashMessage(error.message || 'Error restarting services', 'error');
+            }
+        }
+
+        // Theme toggle
+        function toggleTheme() {
+            var html = document.documentElement;
+            var current = html.getAttribute('data-theme') || 'dark';
+            var next = current === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', next);
+            localStorage.setItem('mac-agents-theme', next);
+            updateThemeIcon(next);
+        }
+
+        function updateThemeIcon(theme) {
+            var btn = document.getElementById('theme-toggle-btn');
+            if (btn) btn.textContent = theme === 'dark' ? '🌙' : '☀️';
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            var theme = localStorage.getItem('mac-agents-theme') || 'dark';
+            updateThemeIcon(theme);
+        });
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

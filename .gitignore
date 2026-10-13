@@ -1,0 +1,64 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Logs
+logs/*.log
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Process files
+*.pid
+start_server.log
+.playwright-mcp/
+
+# Keys and credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*
+
+# Caches
+.pytest_cache/
+.ruff_cache/
+
+# Cursor / Agents — track skills and commands, ignore local settings
+.cursor/settings.local.json
+.agents/settings.local.json
+

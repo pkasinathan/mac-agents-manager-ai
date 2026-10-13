@@ -1,0 +1,414 @@
+# Frequently Asked Questions
+
+## Table of Contents
+
+- [Getting Started](#getting-started)
+- [Web Dashboard](#web-dashboard)
+- [AI Chat](#ai-chat)
+- [CLI](#cli)
+- [LaunchAgents](#launchagents)
+- [Configuration](#configuration)
+- [Security](#security)
+- [Development](#development)
+
+---
+
+## Getting Started
+
+### What is Mac Agents Manager?
+
+Mac Agents Manager is a web UI and CLI tool for managing macOS LaunchAgents. It lets you create, view, edit, start, stop, and reload user LaunchAgents from a browser dashboard or the `mam` command — without manually editing plist files or running raw `launchctl` commands. The dashboard includes an AI Chat mode powered by a local Ollama model for natural-language agent management.
+
+### What are the prerequisites?
+
+- **macOS** (the tool uses macOS-specific `launchctl` APIs)
+- **Python 3.10+**
+- **Ollama** — local LLM runtime (required for AI Chat; optional for core features)
+
+Install Python 3.10+ via Homebrew if needed:
+
+```bash
+brew install python@3.10
+```
+
+Install Ollama and pull the model:
+
+```bash
+brew install ollama
+brew services start ollama   # runs as a background service, auto-starts at login
+ollama pull qwen3.5:4b       # text model for AI Chat
+```
+
+> **Note:** If you skip Ollama setup, everything except AI Chat works normally. MAM also attempts to auto-start Ollama and auto-pull the model on first chat use, but pre-installing is recommended.
+
+### How do I install Mac Agents Manager?
+
+From PyPI:
+
+```bash
+pip3 install mac-agents-manager-ai
+```
+
+Or with uv:
+
+```bash
+uv pip install mac-agents-manager-ai
+```
+
+Or in a dedicated virtual environment:
+
+```bash
+mkdir -p ~/.mac_agents_manager
+python3 -m venv ~/.mac_agents_manager/venv
+source ~/.mac_agents_manager/venv/bin/activate
+pip install mac-agents-manager-ai
+```
+
+### How do I start it?
+
+Install as a macOS service that auto-starts at login:
+
+```bash
+mam service install
+```
+
+Or start manually (foreground):
+
+```bash
+mam
+```
+
+Then open **http://localhost:8081** in your browser, or run:
+
+```bash
+mam open
+```
+
+### What CLI commands are available?
+
+| Command | Description |
+|---------|-------------|
+| `mam` | Start the web server (default when no subcommand given) |
+| `mam serve [-p PORT] [--debug]` | Start the web server with options |
+| `mam service install` | Install as a LaunchAgent (auto-start at login) |
+| `mam service uninstall` | Uninstall the LaunchAgent |
+| `mam service start` | Start the LaunchAgent service |
+| `mam service stop` | Stop the LaunchAgent service |
+| `mam service restart` | Restart the LaunchAgent service |
+| `mam service status` | Show service status |
+| `mam list` | List all agents with status |
+| `mam show <label>` | Show agent details and plist XML |
+| `mam create <name> -c CAT -s SCRIPT [-t TYPE]` | Create a new agent |
+| `mam load <label>` | Register agent with launchd |
+| `mam unload <label>` | Unregister agent from launchd |
+| `mam start <label>` | Start a loaded agent |
+| `mam stop <label>` | Stop a running agent |
+| `mam restart <label>` | Restart an agent |
+| `mam delete <label> [-y]` | Unload and delete an agent |
+| `mam start-all` | Start all stopped keepalive agents |
+| `mam logs <label> [-f] [--stderr] [-n N]` | View agent logs (`-f` follow, `--stderr` for stderr, `-n` lines) |
+| `mam open` | Open the dashboard in your browser |
+| `mam --version` | Show version information |
+
+---
+
+## Web Dashboard
+
+### How do I access the dashboard?
+
+Open **http://localhost:8081** in your browser, or run:
+
+```bash
+mam open
+```
+
+The web server must be running (`mam` or `mam serve`).
+
+### What can I do on the dashboard?
+
+The dashboard provides:
+
+- **Agent overview** — See all LaunchAgents grouped by type (keepalive vs scheduled) with real-time status indicators
+- **Agent details** — View full configuration including label, program, schedule, environment, and log paths
+- **Create agents** — Form-based creation of new keepalive or scheduled LaunchAgents with environment variable support
+- **Lifecycle control** — Start, stop, restart, load, and unload agents with one click
+- **Log viewer** — View stdout/stderr logs for any agent directly in the browser
+- **Edit agents** — Modify agent configuration and plist properties
+- **AI Chat** — Natural-language agent management (see [AI Chat](#ai-chat) section)
+
+### Can I change the port?
+
+Yes. Set the `MAM_PORT` environment variable:
+
+```bash
+MAM_PORT=9090 mam
+```
+
+Or use the `--port` flag:
+
+```bash
+mam serve --port 9090
+```
+
+---
+
+## AI Chat
+
+### How does AI Chat work?
+
+The dashboard right panel has two tabs: **IDE** (the classic editor) and **AI Chat**. When you switch to AI Chat:
+
+1. MAM checks Ollama health and model availability
+2. If no service is selected, global prompts are suggested (statistics, summaries, etc.)
+3. If a service is selected in the sidebar, context-aware prompts are shown (start, stop, rename, change schedule, etc.)
+4. You can type free-form messages or click suggested prompts
+5. For any mutating action, the assistant proposes a change and waits for your explicit Apply/Cancel
+
+### What model does AI Chat use?
+
+Default: `qwen3.5:4b` (same text model used by [Chronometry](https://github.com/pkasinathan/chronometry-ai)). Override with:
+
+```bash
+MAM_OLLAMA_MODEL=llama3:8b mam
+```
+
+### Does MAM auto-start Ollama?
+
+Yes. When you open the AI Chat tab, MAM:
+
+1. Checks if Ollama is running
+2. If not, attempts to start it (`ollama serve` in background)
+3. Checks if the configured model is available
+4. If not, attempts to pull it (`ollama pull qwen3.5:4b`)
+
+This follows the same auto-lifecycle pattern as Chronometry. For the fastest experience, pre-install Ollama and pull the model.
+
+### Why did chat say "No pending action was found to confirm"?
+
+This happens when there is no unresolved pending mutation in the current chat session.
+
+Common reasons:
+
+- The previous action was already completed or canceled
+- The assistant response did not include a structured action payload
+- You switched to a different/new chat session
+
+Fix: ask for the change again and use Apply/Cancel on the new action preview.
+
+### Why wasn't my change auto-applied after I asked for it?
+
+By design, mutating actions are confirmation-first. The assistant presents an action preview and waits for explicit Apply/Cancel before execution.
+
+### I clicked rename but nothing changed. Is that a bug?
+
+If the requested name/category resolves to the same label, rename is treated as a safe no-op and returns success without unloading/reloading or rewriting files.
+
+### Where are chat sessions stored?
+
+Chat sessions are persisted as JSON files in `~/.mac_agents_manager/chat/`. Each session file contains the message history and any pending actions. Sessions older than 30 days are automatically cleaned up.
+
+### Can I clear chat history?
+
+Yes:
+- In the dashboard, use the session picker to start a new session
+- Sessions can be cleared via the `POST /api/chat/clear` endpoint
+- To remove all history: `rm -rf ~/.mac_agents_manager/chat/`
+
+---
+
+## CLI
+
+### How do I create a new agent from the CLI?
+
+Use `mam create` with a name, category, and script path:
+
+```bash
+mam create my-task -c productivity -s /path/to/script.sh
+```
+
+This creates a keepalive agent by default. For a scheduled agent:
+
+```bash
+mam create daily-backup -c maintenance -s /path/to/backup.sh -t scheduled --hour 2 --minute 0
+```
+
+After creating, register it with launchd:
+
+```bash
+mam load <label>
+```
+
+### How do I view agent logs?
+
+```bash
+mam logs <label>              # Last 50 lines of stdout
+mam logs <label> -f           # Follow (tail -f) stdout
+mam logs <label> --stderr     # Show stderr instead
+mam logs <label> -n 100       # Last 100 lines
+```
+
+### How do I see agent details?
+
+```bash
+mam show <label>
+```
+
+This displays the agent's label, status, PID, type (keepalive/scheduled), program path, environment variables, schedule times, log paths, and the raw plist XML.
+
+### How do I delete an agent?
+
+```bash
+mam delete <label>        # Prompts for confirmation
+mam delete <label> -y     # Skip confirmation
+```
+
+This unloads the agent from launchd and removes the plist file.
+
+---
+
+## LaunchAgents
+
+### What are LaunchAgents?
+
+LaunchAgents are macOS background services that run in the user's login session. They are defined by plist (property list) files in `~/Library/LaunchAgents/` and managed by `launchctl`. They can run continuously (keepalive) or on a schedule.
+
+### What is the difference between keepalive and scheduled agents?
+
+| Type | Behavior |
+|------|----------|
+| **keepalive** | Runs continuously. If the process exits, launchd restarts it automatically. |
+| **scheduled** | Runs at specific times defined by hour/minute (`StartCalendarInterval`). The process runs once and exits. |
+| **interval** | Runs every N seconds (`StartInterval`). The process runs once and exits. |
+
+Scheduled and interval agents are both timer-driven, so the dashboard groups them together under **Scheduled** in the sidebar.
+
+### Why is a scheduled agent shown in green when it is not running?
+
+A timer-driven agent only holds a process while it is actually doing work. Between runs it has no PID, and that is its normal healthy state rather than a failure. The dashboard calls this **idle** and colors it the same green as a running agent; `mam list` prints `● idle` for it.
+
+The dot turns red only when something is genuinely wrong:
+
+| Dot | State | Meaning |
+|-----|-------|---------|
+| Green | running | The agent holds a live process. Its PID is shown in the details pane. |
+| Green | idle | A timer agent is loaded and its last run exited 0. It is waiting for its next run. |
+| Red | stopped | A keepalive agent has no process, or a timer agent's last run exited non-zero. |
+| Grey | not loaded | The plist is not registered with launchd. Load it to activate the agent. |
+
+### How do I manage the lifecycle of an agent?
+
+```bash
+mam load <label>       # Register the plist with launchd
+mam start <label>      # Start a loaded agent
+mam stop <label>       # Stop a running agent
+mam restart <label>    # Stop and start an agent
+mam unload <label>     # Unregister from launchd
+mam delete <label>     # Unload and remove the plist file
+```
+
+### Where are plist files stored?
+
+All user LaunchAgent plists are stored in `~/Library/LaunchAgents/`. Mac Agents Manager reads from and writes to this directory.
+
+### How do I start all stopped agents at once?
+
+```bash
+mam start-all
+```
+
+This starts all keepalive agents that are loaded but not running, and loads any that are not yet registered with launchd.
+
+---
+
+## Configuration
+
+### What environment variables are available?
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAM_PORT` | `8081` | Port the web server listens on |
+| `FLASK_DEBUG` | off | Set to `1` or `true` to enable Flask debug mode |
+| `MAM_LABEL_PREFIXES` | — | Comma-separated extra label prefixes to include (e.g. `com.myorg.,com.acme.`) |
+| `MAM_OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API base URL |
+| `MAM_OLLAMA_MODEL` | `qwen3.5:4b` | Model used for AI Chat |
+
+### What label prefixes are shown by default?
+
+Mac Agents Manager shows agents whose labels start with `user.`. To also show agents from other namespaces, set `MAM_LABEL_PREFIXES`:
+
+```bash
+MAM_LABEL_PREFIXES="com.myorg.,com.acme." mam
+```
+
+### How do I enable debug mode?
+
+```bash
+FLASK_DEBUG=1 mam
+```
+
+Or:
+
+```bash
+mam serve --debug
+```
+
+Debug mode enables Flask's interactive debugger and auto-reloading on code changes.
+
+---
+
+## Security
+
+### Is this tool safe to use?
+
+Mac Agents Manager is designed for single-user, localhost-only use:
+
+- The Flask server binds exclusively to `127.0.0.1` — it is not accessible from other machines
+- All state-changing endpoints require a CSRF token to prevent cross-origin attacks
+- Service labels are validated against a strict character allowlist
+- File paths are checked to stay within `~/Library/LaunchAgents/`
+- Log file reads are restricted to known safe directories (`/tmp/`, `/private/tmp/`, `/var/log/`, `/private/var/log/`, `/var/folders/`, `/private/var/folders/`)
+- Security headers (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Content-Security-Policy`) are set on all responses
+- AI Chat mutations require explicit user confirmation; unstructured claims are rewritten to safe retries
+- Ollama access is server-side only; browser code talks only to the Flask backend (`connect-src 'self'`)
+
+See [SECURITY.md](SECURITY.md) for the full security model and vulnerability reporting instructions.
+
+### Does any data leave my machine?
+
+Core MAM operations run locally and do not call cloud APIs.
+If AI Chat is enabled and the configured Ollama model is not present, Ollama may download the model over the network on first use.
+
+---
+
+## Development
+
+### How do I set up a development environment?
+
+```bash
+git clone https://github.com/pkasinathan/mac-agents-manager-ai.git
+cd mac-agents-manager-ai
+make dev    # Creates venv, installs runtime + dev dependencies
+source venv/bin/activate
+```
+
+### How do I run tests?
+
+```bash
+make test
+```
+
+### How do I lint and format code?
+
+```bash
+make lint      # Run ruff linter
+make format    # Auto-format with ruff
+make check     # Run lint + tests together
+```
+
+### How do I uninstall?
+
+```bash
+mam service uninstall
+pip3 uninstall mac-agents-manager-ai
+rm -rf ~/.mac_agents_manager
+```
